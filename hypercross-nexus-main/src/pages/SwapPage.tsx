@@ -44,12 +44,33 @@ export function SwapPage() {
       const statusPayload = await statusRes.json().catch(() => ({}));
       if (capRes.ok && capPayload.capabilities) {
         setCapabilities(capPayload.capabilities);
+      } else {
+        setCapabilities({
+          backendApi: "UNAVAILABLE",
+          blockchainRpc: "UNAVAILABLE",
+          wallet: "LIVE",
+          chainstackConnectivity: "UNAVAILABLE",
+          digitalAssetIssuance: "UNAVAILABLE",
+          send: "UNAVAILABLE",
+          swap: "UNAVAILABLE",
+          transactions: "UNAVAILABLE",
+        });
       }
       if (statusRes.ok && statusPayload) {
         setBackendConfig(statusPayload);
       }
     } catch (err) {
-      console.error("Failed to load capabilities or status for Swap:", err);
+      console.error("Failed to load capabilities or status for Swap (offline or unreachable backend):", err);
+      setCapabilities({
+        backendApi: "UNAVAILABLE",
+        blockchainRpc: "UNAVAILABLE",
+        wallet: "LIVE",
+        chainstackConnectivity: "UNAVAILABLE",
+        digitalAssetIssuance: "UNAVAILABLE",
+        send: "UNAVAILABLE",
+        swap: "UNAVAILABLE",
+        transactions: "UNAVAILABLE",
+      });
     }
   };
 
@@ -163,8 +184,7 @@ export function SwapPage() {
 
   const executeSwap = async () => {
     if (quoteExpired) {
-      setError("Quote expired. Refreshing...");
-      await fetchQuote();
+      setError("0x quote expired. Request a new quote.");
       return;
     }
     setError(null);
@@ -288,7 +308,7 @@ export function SwapPage() {
               <div className="flex justify-between"><span className="text-white/50">Price</span><span className="text-white">{quote.price}</span></div>
               <div className="flex justify-between"><span className="text-white/50">Estimated Gas</span><span className="text-white">{quote.estimatedGas}</span></div>
               <div className="flex justify-between"><span className="text-white/50">Provider</span><span className="text-white">{quote.provider}</span></div>
-              {quoteExpired && <p className="text-yellow-400 text-xs pt-1">Quote expired. Refreshing...</p>}
+              {quoteExpired && <p className="text-yellow-400 text-xs pt-1">0x quote expired. Request a new quote.</p>}
 
               {quote.allowanceRequired && (
                 <Button onClick={approve} className="w-full mt-2 bg-yellow-600 hover:bg-yellow-700 text-white border-0">
@@ -311,13 +331,6 @@ export function SwapPage() {
               </p>
             </div>
           )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-export default SwapPage;
         </CardContent>
       </Card>
     </div>

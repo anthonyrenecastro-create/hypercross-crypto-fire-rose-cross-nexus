@@ -18,6 +18,7 @@
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test",
+    "test:harness": "tsx scripts/real-execution-harness.ts",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "db:generate": "drizzle-kit generate",

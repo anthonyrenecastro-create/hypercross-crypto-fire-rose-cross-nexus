@@ -28,6 +28,7 @@ export function SendPage() {
 
   const [capabilities, setCapabilities] = useState<any>(null);
   const [backendConfig, setBackendConfig] = useState<any>(null);
+  const [sendState, setSendState] = useState<"IDLE" | "VALIDATE" | "AWAITING_SIGNATURE" | "SUBMITTED" | "PENDING" | "CONFIRMED" | "FAILED" | "REJECTED">("IDLE");
 
   const { data: receipt, isLoading: waitingForReceipt } = useWaitForTransactionReceipt({
     hash: (txHash as `0x${string}`) || undefined,
@@ -44,12 +45,33 @@ export function SendPage() {
       const statusPayload = await statusRes.json().catch(() => ({}));
       if (capRes.ok && capPayload.capabilities) {
         setCapabilities(capPayload.capabilities);
+      } else {
+        setCapabilities({
+          backendApi: "UNAVAILABLE",
+          blockchainRpc: "UNAVAILABLE",
+          wallet: "LIVE",
+          chainstackConnectivity: "UNAVAILABLE",
+          digitalAssetIssuance: "UNAVAILABLE",
+          send: "UNAVAILABLE",
+          swap: "UNAVAILABLE",
+          transactions: "UNAVAILABLE",
+        });
       }
       if (statusRes.ok && statusPayload) {
         setBackendConfig(statusPayload);
       }
     } catch (err) {
-      console.error("Failed to load capabilities or status for Send:", err);
+      console.error("Failed to load capabilities or status for Send (offline or unreachable backend):", err);
+      setCapabilities({
+        backendApi: "UNAVAILABLE",
+        blockchainRpc: "UNAVAILABLE",
+        wallet: "LIVE",
+        chainstackConnectivity: "UNAVAILABLE",
+        digitalAssetIssuance: "UNAVAILABLE",
+        send: "UNAVAILABLE",
+        swap: "UNAVAILABLE",
+        transactions: "UNAVAILABLE",
+      });
     }
   };
 
@@ -57,13 +79,31 @@ export function SendPage() {
     loadCapabilitiesAndStatus();
   }, []);
 
+  useEffect(() => {
+    if (!txHash) {
+      if (sendState !== "VALIDATE" && sendState !== "AWAITING_SIGNATURE" && sendState !== "REJECTED") {
+        setSendState("IDLE");
+      }
+      return;
+    }
+    if (waitingForReceipt) {
+      setSendState("PENDING");
+    } else if (receipt) {
+      if (receipt.status === "success" || receipt.status === 1 || receipt.status === true) {
+        setSendState("CONFIRMED");
+      } else {
+        setSendState("FAILED");
+      }
+    }
+  }, [txHash, receipt, waitingForReceipt]);
+
   const status = !txHash
-    ? null
-    : waitingForReceipt
+    ? (sendState === "VALIDATE" ? "Validating recipient, balance, and network..." : sendState === "AWAITING_SIGNATURE" ? "Awaiting wallet signature..." : sendState === "REJECTED" ? "Rejected: signature rejected or failed validation." : null)
+    : sendState === "PENDING"
       ? "Transaction submitted — waiting for confirmation on-chain…"
-      : receipt?.status === "success"
+      : sendState === "CONFIRMED"
         ? "Transaction confirmed successfully"
-        : receipt
+        : sendState === "FAILED"
           ? "Transaction failed (reverted on-chain)"
           : "Transaction submitted";
 
@@ -71,6 +111,20 @@ export function SendPage() {
     setError(null);
     setTxHash(null);
     setTransactionId(null);
+    setSendState("VALIDATE");
+
+    // 1. Validation checks
+    if (!recipient || !recipient.startsWith("0x") || recipient.length !== 42) {
+      setError("Invalid address format. Must be a 42-character hexadecimal EVM address.");
+      setSendState("REJECTED");
+      return;
+    }
+
+    if (isNaN(Number(amount)) || Number(amount) <= 0) {
+      setError("Amount must be a positive number.");
+      setSendState("REJECTED");
+      return;
+    }
 
     // Dynamic readiness guard verification
     const rpcHealthy = backendConfig?.rpcHealthy ?? false;
@@ -90,6 +144,7 @@ export function SendPage() {
 
     if (!guardResult.ready) {
       setError(guardResult.error);
+      setSendState("REJECTED");
       return;
     }
 
@@ -106,11 +161,14 @@ export function SendPage() {
       const prepared = await prepRes.json();
       if (!prepRes.ok) {
         setError(prepared?.message || prepared?.error || "Failed to prepare transfer.");
+        setSendState("REJECTED");
+        setPreparing(false);
         return;
       }
 
       setTransactionId(prepared.transactionId);
       setGasEstimate(prepared.gasEstimate);
+      setSendState("AWAITING_SIGNATURE");
 
       // The wallet signs and broadcasts — Hypercross never sees the private key.
       const hash = await sendTransactionAsync({
@@ -120,12 +178,14 @@ export function SendPage() {
       });
 
       setTxHash(hash);
+      setSendState("SUBMITTED");
       await fetch(`/api/transactions/${prepared.transactionId}/submitted`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transactionHash: hash }),
       });
     } catch (err: any) {
+      setSendState("REJECTED");
       // Wallet rejection is a user decision, not a backend failure.
       if (transactionId) {
         await fetch(`/api/transactions/${transactionId}/cancelled`, { method: "POST" }).catch(() => {});
@@ -134,10 +194,14 @@ export function SendPage() {
       // Translate common wallet/provider errors
       const msg = err?.message || "";
       if (msg.includes("rejected") || msg.includes("User rejected")) {
-        setError("User rejected signature request.");
+        setError("User rejected signature request in wallet.");
       } else if (msg.includes("insufficient funds") || msg.includes("gas required exceeds allowance")) {
-        setError("Insufficient funds for gas value plus gas.");
+        setError("Insufficient ETH for amount plus gas.");
       } else if (msg.includes("Wrong network") || msg.includes("chain mismatch")) {
+        setError("Switch wallet network to match backend Chain ID.");
+      } else {
+        setError(err?.shortMessage || err?.message || "Transaction was not sent.");
+      }
         setError("Wrong network selected in wallet.");
       } else {
         setError(err?.shortMessage || err?.message || "Transaction was not sent.");
@@ -226,13 +290,6 @@ export function SendPage() {
           >
             {preparing || sending ? "Awaiting wallet…" : "Review & Send"}
           </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-export default SendPage;
         </CardContent>
       </Card>
     </div>

@@ -121,7 +121,7 @@ class DataSourceManager {
   }
 
   private isDemoDataAllowed(): boolean {
-    const appMode = process.env.APP_DATA_MODE || "demo";
+    const appMode = process.env.APP_DATA_MODE || "live";
     if (appMode === "live") return false;
     const allowDemo = process.env.ALLOW_DEMO_DATA;
     return this.envFlagEnabled(allowDemo);
@@ -189,19 +189,21 @@ class DataSourceManager {
   }
 
   async getLiveOrderBook(instrument: string): Promise<any> {
-    try {
-      // Placeholder: could integrate with real exchange APIs (Binance, Deribit, etc.)
-      // For now, return mock structure that frontend can handle
-      return {
-        bids: [],
-        asks: [],
-        timestamp: new Date().toISOString(),
-      };
-    } catch (err) {
-      console.error('Failed to fetch order book:', err);
-      if (this.liveStrictMode) throw err;
-      return null;
+    if (!this.isDemoDataAllowed()) {
+      throw new Error("Live order book provider is not configured.");
     }
+    return {
+      bids: [
+        { price: 2500.50, quantity: 1.5, side: "buy" },
+        { price: 2501.00, quantity: 2.3, side: "buy" }
+      ],
+      asks: [
+        { price: 2502.00, quantity: 0.8, side: "sell" },
+        { price: 2502.50, quantity: 1.2, side: "sell" }
+      ],
+      timestamp: new Date().toISOString(),
+      simulated: true
+    };
   }
 
   // ── SPORTS DATA ──

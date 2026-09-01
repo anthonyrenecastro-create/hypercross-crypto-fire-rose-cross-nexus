@@ -3,7 +3,7 @@ import { useAccount, useBalance, useChainId, useDisconnect, useSwitchChain } fro
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-type WalletUiState = "DISCONNECTED" | "CONNECTING" | "CONNECTED" | "WRONG_NETWORK" | "RPC_UNAVAILABLE";
+type WalletUiState = "DISCONNECTED" | "CONNECTING" | "CONNECTED" | "WRONG_CHAIN" | "ERROR";
 
 interface ChainstackStatusSummary {
   chainId: number | null;
@@ -54,17 +54,17 @@ export function WalletStatusPanel() {
   const wrongNetwork = isConnected && expectedChainId != null && chainId !== expectedChainId;
 
   let state: WalletUiState = "DISCONNECTED";
-  if (rpcUnavailable) state = "RPC_UNAVAILABLE";
+  if (rpcUnavailable) state = "ERROR";
   else if (isConnecting) state = "CONNECTING";
-  else if (wrongNetwork) state = "WRONG_NETWORK";
+  else if (wrongNetwork) state = "WRONG_CHAIN";
   else if (isConnected) state = "CONNECTED";
 
   const stateLabel: Record<WalletUiState, { text: string; className: string }> = {
     DISCONNECTED: { text: "Disconnected", className: "text-white/40" },
     CONNECTING: { text: "Connecting…", className: "text-yellow-400" },
     CONNECTED: { text: "Connected", className: "text-green-400" },
-    WRONG_NETWORK: { text: "Wrong Network", className: "text-red-400" },
-    RPC_UNAVAILABLE: { text: "Chainstack RPC Unavailable", className: "text-red-400" },
+    WRONG_CHAIN: { text: "Wrong Chain", className: "text-red-400" },
+    ERROR: { text: "Chainstack RPC Error", className: "text-red-400" },
   };
 
   return (

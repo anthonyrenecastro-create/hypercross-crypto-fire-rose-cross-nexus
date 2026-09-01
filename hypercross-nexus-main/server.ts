@@ -130,8 +130,13 @@ async function verifyPayPalWebhook(req: express.Request): Promise<{ ok: boolean;
     return { ok: false, error: "Missing PayPal webhook headers." };
   }
 
+  const paypalSecret = process.env.PAYPAL_WEBHOOK_SECRET;
+  if (!paypalSecret) {
+    return { ok: false, error: "PayPal webhook secret is not configured." };
+  }
+
   const payload = `${webhookId}|${timestamp}|${eventBody}`;
-  const computed = crypto.createHmac("sha256", process.env.PAYPAL_WEBHOOK_SECRET || "demo-paypal-secret").update(payload).digest("base64");
+  const computed = crypto.createHmac("sha256", paypalSecret).update(payload).digest("base64");
   if (!crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signature))) {
     return { ok: false, error: "PayPal signature mismatch." };
   }
@@ -616,11 +621,12 @@ async function startServer() {
   });
 
   // ── Commercial deployment health endpoints (Railway-facing) ──
-  // /health/live: process is alive. /health/ready: required dependencies are reachable.
+  // ROLE 1: /health/live - Process exists. Verifies the HTTP server is running.
   app.get("/health/live", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+    res.json({ status: "ok", role: "process-live", timestamp: new Date().toISOString() });
   });
 
+  // ROLE 2: /health/ready - Server and required database/RPC dependencies are ready or operational.
   app.get("/health/ready", async (req, res) => {
     const [chainstackHealthy, postgres] = await Promise.all([
       blockchainService.healthCheck().catch(() => false),
@@ -643,8 +649,9 @@ async function startServer() {
     });
   });
 
+  // ROLE 3: /health - Legacy/redundant checkpoint. Aliased to /health/live.
   app.get("/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+    res.redirect(301, "/health/live");
   });
 
   // ── Commercial (PostgreSQL-backed) auth + billing ──
@@ -1725,7 +1732,7 @@ async function startServer() {
       const orderbook = await dataSourceManager.getLiveOrderBook(req.params.instrument);
       res.json(orderbook);
     } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Failed to fetch orderbook" });
+      res.status(503).json({ error: "SERVICE_UNAVAILABLE", message: err?.message ?? "Live order book provider is not configured." });
     }
   });
 

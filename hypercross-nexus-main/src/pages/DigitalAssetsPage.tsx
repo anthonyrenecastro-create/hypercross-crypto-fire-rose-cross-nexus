@@ -120,12 +120,33 @@ export default function DigitalAssetsPage() {
       const statusPayload = await statusRes.json().catch(() => ({}));
       if (capRes.ok && capPayload.capabilities) {
         setCapabilities(capPayload.capabilities);
+      } else {
+        setCapabilities({
+          backendApi: "UNAVAILABLE",
+          blockchainRpc: "UNAVAILABLE",
+          wallet: "LIVE",
+          chainstackConnectivity: "UNAVAILABLE",
+          digitalAssetIssuance: "UNAVAILABLE",
+          send: "UNAVAILABLE",
+          swap: "UNAVAILABLE",
+          transactions: "UNAVAILABLE",
+        });
       }
       if (statusRes.ok && statusPayload) {
         setBackendConfig(statusPayload);
       }
     } catch (err) {
-      console.error("Failed to load capabilities or status:", err);
+      console.error("Failed to load capabilities or status (offline or unreachable backend):", err);
+      setCapabilities({
+        backendApi: "UNAVAILABLE",
+        blockchainRpc: "UNAVAILABLE",
+        wallet: "LIVE",
+        chainstackConnectivity: "UNAVAILABLE",
+        digitalAssetIssuance: "UNAVAILABLE",
+        send: "UNAVAILABLE",
+        swap: "UNAVAILABLE",
+        transactions: "UNAVAILABLE",
+      });
     }
   };
 
@@ -262,13 +283,12 @@ export default function DigitalAssetsPage() {
 
     if (receipt) {
       const blockNumber = receipt.blockNumber != null ? Number(receipt.blockNumber) : undefined;
+      const contractAddress = receipt.contractAddress ?? undefined;
       if (receipt.status === "success" || receipt.status === 1 || receipt.status === true) {
-        setDeployStatus("CONFIRMED");
-        
-        // Save the resulting metadata to indexer/database
-        const contractAddress = receipt.contractAddress ?? undefined;
+        setDeployStatus("CONFIRMED_ONCHAIN");
         
         const persistAsset = async () => {
+          setDeployStatus("INDEXING");
           try {
             if (isElectron) {
               await window.electron!.dbCreateAsset({
@@ -309,20 +329,30 @@ export default function DigitalAssetsPage() {
               if (!res.ok) {
                 const payload = await res.json().catch(() => ({}));
                 console.error("Failed to persist asset metadata to backend:", payload?.error);
+                throw new Error(payload?.error || "Local backend indexing request failed");
               }
             }
             // Trigger local refresh
             fetchAssets();
+            setDeployStatus("INDEXED");
             setIssued(true);
             setShowForm(false);
             setForm({ name: "", symbol: "", supply: "", type: "Fungible", channel: "", subAccount: "" });
-            setTimeout(() => setIssued(false), 5000);
-          } catch (err) {
-            console.error("Failed to store asset metadata:", err);
-          } finally {
-            setIssuing(false);
             setDeployTxHash(null);
-            setDeployStatus("IDLE");
+            setIssuing(false);
+            setTimeout(() => setIssued(false), 5000);
+          } catch (err: any) {
+            console.error("Failed to store asset metadata:", err);
+            setDeployStatus("INDEXING_FAILED");
+            setIssuing(false);
+            setError(
+              `On-chain deployment confirmed.\n` +
+              `Local/backend indexing failed (unreachable/rejected by database).\n` +
+              `Transaction Hash: ${deployTxHash}\n` +
+              `Contract Address: ${contractAddress || "unknown"}`
+            );
+            // Protect against duplicate deployment: leave the inputs preserved so they don't deploy again,
+            // but log clearly and keep the deployTxHash visible in the error statement.
           }
         };
 
@@ -637,8 +667,8 @@ export default function DigitalAssetsPage() {
                 </select>
               </div>
               <div className="space-y-2">
-                <Label className="text-white/70">Blockchain Channel</Label>
-                <Input value={form.channel} onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))} placeholder="default-channel" className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-[#ffae00]" />
+                <Label className="text-white/70">Blockchain Channel <span className="text-white/30">(Legacy - Fabric Only)</span></Label>
+                <Input value={form.channel || "default-channel"} onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))} placeholder="default-channel" disabled className="bg-black/10 border-white/5 text-white/40 placeholder:text-white/20 font-mono text-sm focus-visible:ring-0 cursor-not-allowed" />
               </div>
               <div className="space-y-2">
                 <Label className="text-white/70">Sub-account <span className="text-white/30">(dept / IoT group)</span></Label>
@@ -656,7 +686,10 @@ export default function DigitalAssetsPage() {
               {deployStatus === "AWAITING_SIGNATURE" && "Awaiting wallet authorization signature..."}
               {deployStatus === "SUBMITTED" && "Transaction submitted to blockchain..."}
               {deployStatus === "PENDING" && "Deploying contract: pending block confirmation..."}
-              {deployStatus === "CONFIRMED" && "Deploy transaction confirmed!"}
+              {deployStatus === "CONFIRMED_ONCHAIN" && "On-chain deployment confirmed!"}
+              {deployStatus === "INDEXING" && "Registering asset with database indexer..."}
+              {deployStatus === "INDEXED" && "Asset issued and indexed successfully!"}
+              {deployStatus === "INDEXING_FAILED" && "Indexing failed (On-chain deployment succeeded!)"}
               {deployStatus === "FAILED" && "Transaction reverted. Deploy failed."}
               {deployStatus === "REJECTED" && "Deploy rejected or failed."}
               {deployStatus === "IDLE" && "Issue Asset"}
@@ -770,30 +803,33 @@ export default function DigitalAssetsPage() {
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-2">
                             <button
-                              title="Transfer tokens"
-                              onClick={() => openModal("transfer", a)}
-                              disabled={isDemoAsset}
-                              className="p-1.5 rounded text-white/40 hover:text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                              title="Transfer (Coming Soon - On-Chain transfer is in development)"
+                              onClick={(e) => { e.preventDefault(); }}
+                              disabled={true}
+                              className="p-1.5 rounded text-white/20 cursor-not-allowed hover:bg-transparent transition-colors flex items-center gap-1"
                             >
                               <ArrowUpRight className="h-4 w-4" />
+                              <span className="text-[10px] text-white/40">Coming Soon</span>
                             </button>
                             <button
-                              title="Burn tokens"
-                              onClick={() => openModal("burn", a)}
-                              disabled={isDemoAsset}
-                              className="p-1.5 rounded text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                              title="Burn (Coming Soon - On-Chain burning is in development)"
+                              onClick={(e) => { e.preventDefault(); }}
+                              disabled={true}
+                              className="p-1.5 rounded text-white/20 cursor-not-allowed hover:bg-transparent transition-colors flex items-center gap-1"
                             >
                               <Flame className="h-4 w-4" />
+                              <span className="text-[10px] text-white/40">Coming Soon</span>
                             </button>
                             <button
-                              title="Sync from chain"
-                              onClick={() => handleSync(a)}
-                              disabled={isDemoAsset || syncingRow === a.symbol}
-                              className="p-1.5 rounded text-white/40 hover:text-green-400 hover:bg-green-500/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                              title="Sync (Coming Soon - On-Chain synchronization is in development)"
+                              onClick={(e) => { e.preventDefault(); }}
+                              disabled={true}
+                              className="p-1.5 rounded text-white/20 cursor-not-allowed hover:bg-transparent transition-colors flex items-center gap-1"
                             >
-                              <RefreshCw className={`h-4 w-4 ${syncingRow === a.symbol ? "animate-spin" : ""}`} />
+                              <RefreshCw className="h-4 w-4" />
+                              <span className="text-[10px] text-white/40">Coming Soon</span>
                             </button>
                           </div>
                         </td>
@@ -807,7 +843,5 @@ export default function DigitalAssetsPage() {
         </CardContent>
       </Card>
     </div>
-  );
-}
   );
 }

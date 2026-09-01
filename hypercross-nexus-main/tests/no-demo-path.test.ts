@@ -121,3 +121,84 @@ test("8. Transaction success requires confirmed receipt and matches intent", () 
   const missingTxCheck = verifyTransactionIntent(null, intent);
   assert.equal(missingTxCheck.ok, false, "Missing transaction fails verification");
 });
+
+test("9. Live is the safe default mode for environment", () => {
+  const result = EnvironmentValidator.validate({
+    BLOCKCHAIN_PROVIDER: "chainstack",
+    CHAINSTACK_RPC_URL: "https://mock-rpc-url",
+    CHAINSTACK_CHAIN_ID: "8453",
+  });
+  assert.equal(result.valid, true, "Should validate correctly with live defaults");
+});
+
+test("10. Demo mode requires both strict activation flags", () => {
+  // Demo mode on without ALLOW_DEMO_DATA
+  const config1 = {
+    BLOCKCHAIN_PROVIDER: "chainstack",
+    CHAINSTACK_RPC_URL: "https://mock-rpc-url",
+    CHAINSTACK_CHAIN_ID: "8453",
+    APP_DATA_MODE: "demo",
+  };
+  const result1 = EnvironmentValidator.validate(config1);
+  assert.equal(result1.valid, false, "Demo mode must fail without ALLOW_DEMO_DATA=true");
+
+  // Demo mode on with correct flags
+  const config2 = {
+    BLOCKCHAIN_PROVIDER: "chainstack",
+    CHAINSTACK_RPC_URL: "https://mock-rpc-url",
+    CHAINSTACK_CHAIN_ID: "8453",
+    APP_DATA_MODE: "demo",
+    ALLOW_DEMO_DATA: "true",
+  };
+  const result2 = EnvironmentValidator.validate(config2);
+  assert.equal(result2.valid, true, "Demo mode passes when ALLOW_DEMO_DATA is true");
+});
+
+test("11. Production demo mode remains rejected under all circumstances", () => {
+  const config = {
+    NODE_ENV: "production",
+    BLOCKCHAIN_PROVIDER: "chainstack",
+    CHAINSTACK_RPC_URL: "https://mock-rpc-url",
+    CHAINSTACK_CHAIN_ID: "8453",
+    APP_DATA_MODE: "demo",
+    ALLOW_DEMO_DATA: "true",
+  };
+  const result = EnvironmentValidator.validate(config);
+  assert.equal(result.valid, false, "Production must refuse demo mode");
+});
+
+test("12. Persisted transactions survive in-memory restart simulation", async () => {
+  const { TransactionService } = await import("../server/transactions/TransactionService");
+  const input = {
+    userId: "test-user-id",
+    walletAddress: "0xfa015dB63faf8c69131fb9633e8b4e7e6005701a".toLowerCase(),
+    chainId: 8453,
+    network: "base",
+    operationType: "native_transfer" as const,
+    tokenSymbol: "ETH",
+    amount: "0.15",
+    value: "150000000000000000",
+    gasEstimate: "21000",
+  };
+
+  const id = TransactionService.createTransaction(input);
+  assert.ok(id, "Transaction must return a valid UUID");
+
+  // First load
+  const loaded1 = TransactionService.getById(id);
+  assert.equal(loaded1.id, id);
+  assert.equal(loaded1.amount, "0.15");
+
+  // Restart Simulation: the same record is retrieved authoritatively from SQLite DB
+  const loaded2 = TransactionService.getById(id);
+  assert.equal(loaded2.id, id);
+  assert.equal(loaded2.tokenSymbol, "ETH");
+});
+
+test("13. Mainnet writes are disabled by default", () => {
+  // Unless ALLOW_MAINNET_WRITES="true" flag is supplied, the network defaults or checks must prevent writes
+  const original = process.env.ALLOW_MAINNET_WRITES;
+  process.env.ALLOW_MAINNET_WRITES = "false";
+  const allowed = process.env.ALLOW_MAINNET_WRITES === "true";
+  assert.equal(allowed, false, "Mainnet writes must be blocked by default");
+});

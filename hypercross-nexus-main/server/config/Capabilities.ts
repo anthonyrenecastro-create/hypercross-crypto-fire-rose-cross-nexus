@@ -4,7 +4,7 @@ import type { CapabilityRegistry, CapabilityStatus } from "../../packages/shared
 
 export async function getCapabilities(env: NodeJS.ProcessEnv = process.env): Promise<CapabilityRegistry> {
   const isProd = env.NODE_ENV === "production";
-  const appMode = env.APP_DATA_MODE || "demo";
+  const appMode = env.APP_DATA_MODE || "live";
   const isDemo = appMode === "demo";
   const allowDemo = env.ALLOW_DEMO_DATA === "true";
 

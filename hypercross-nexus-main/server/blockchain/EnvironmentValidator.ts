@@ -16,69 +16,103 @@ export class EnvironmentValidator {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // ─── REQUIRED: Provider Selection ───────────────────────────────────────
+    // ─── CORE REQUIRED CONFIG ───────────────────────────────────────────────
     const provider = (env.BLOCKCHAIN_PROVIDER || "chainstack").toLowerCase();
     if (provider !== "chainstack") {
       errors.push(
-        `BLOCKCHAIN_PROVIDER must be "chainstack". Got: "${provider}"`
+        `[CORE] BLOCKCHAIN_PROVIDER must be "chainstack". Got: "${provider}"`
       );
     }
 
-    // ─── REQUIRED: Chainstack RPC Configuration ─────────────────────────────
     const rpcUrl = env.CHAINSTACK_RPC_URL?.trim();
     if (!rpcUrl) {
       errors.push(
-        `CHAINSTACK_RPC_URL is required when BLOCKCHAIN_PROVIDER=chainstack. ` +
-        `Set this to your Chainstack RPC endpoint (e.g., https://...chainstack.com/...)`
+        `[CORE] CHAINSTACK_RPC_URL is required. Set this to your Chainstack RPC endpoint (e.g., https://...chainstack.com/...)`
       );
     }
 
     const chainIdStr = env.CHAINSTACK_CHAIN_ID?.trim();
     if (!chainIdStr) {
       errors.push(
-        `CHAINSTACK_CHAIN_ID is required. Specify the target network ID (e.g., 1 for Ethereum, 11155111 for Sepolia)`
+        `[CORE] CHAINSTACK_CHAIN_ID is required to identify the target EVM network (e.g., 8453 for Base, 11155111 for Sepolia)`
       );
     } else if (!/^\d+$/.test(chainIdStr)) {
-      errors.push(`CHAINSTACK_CHAIN_ID must be a numeric chain ID. Got: "${chainIdStr}"`);
+      errors.push(`[CORE] CHAINSTACK_CHAIN_ID must be a numeric chain ID. Got: "${chainIdStr}"`);
     }
 
     const network = env.CHAINSTACK_NETWORK?.trim();
     if (!network) {
-      warnings.push(`CHAINSTACK_NETWORK not specified. Defaulting to "ethereum".`);
+      warnings.push(`[CORE] CHAINSTACK_NETWORK not specified. Defaulting to "ethereum".`);
     }
 
-    // ─── OPTIONAL: Server-Side Signer (Should Be Disabled for MVP) ──────────
-    if (env.CHAINSTACK_PRIVATE_KEY?.trim()) {
+    // ─── OPTIONAL FEATURE CONFIG ────────────────────────────────────────────
+    // 0x Swap features
+    const enableSwap = env.FEATURE_SWAP !== "false";
+    if (enableSwap && !env.ZEROX_API_KEY?.trim()) {
       warnings.push(
-        `CHAINSTACK_PRIVATE_KEY is set. For MVP, user wallet signing is recommended. ` +
-        `Server-side signing should only be used for automation, not normal transactions.`
+        `[FEATURE] ZEROX_API_KEY is not set. 0x Swap operations will be disabled/unavailable.`
       );
     }
 
-    // ─── OPTIONAL: Mode Selection ────────────────────────────────────────────
-    const appMode = env.APP_DATA_MODE?.trim();
+    // PayPal Webhook feature
+    const enablePayPal = env.FEATURE_PAYPAL === "true";
+    if (enablePayPal && !env.PAYPAL_WEBHOOK_SECRET?.trim()) {
+      errors.push(
+        `[FEATURE] PayPal Webhook integration is enabled (FEATURE_PAYPAL=true) but PAYPAL_WEBHOOK_SECRET is not configured.`
+      );
+    }
+
+    // ─── DEMO MODE CONFIG ───────────────────────────────────────────────────
+    const appMode = env.APP_DATA_MODE?.trim() || "live";
+    const allowDemo = env.ALLOW_DEMO_DATA === "true";
+    const isProd = env.NODE_ENV === "production";
+
+    if (isProd && (allowDemo || appMode === "demo")) {
+      errors.push(
+        "CONF_ERROR: Demo data fallback is not allowed in production. " +
+        "To run in production, set APP_DATA_MODE=live, ALLOW_DEMO_DATA=false, and configure real credentials."
+      );
+    }
+
     if (appMode && !["live", "demo", "test"].includes(appMode)) {
-      warnings.push(
-        `APP_DATA_MODE value "${appMode}" is not recognized. Use: live, demo, or test.`
+      errors.push(
+        `[DEMO] APP_DATA_MODE value "${appMode}" is not recognized. Use: live, demo, or test.`
       );
+    }
+
+    if (appMode === "demo") {
+      if (!allowDemo) {
+        errors.push(
+          "[DEMO] Invalid configuration: To enable demo mode, both APP_DATA_MODE=demo and ALLOW_DEMO_DATA=true must be set."
+        );
+      }
+    } else {
+      // appMode is "live" or "test"
+      if (allowDemo && !isProd) {
+        errors.push(
+          "[DEMO] Invalid configuration: ALLOW_DEMO_DATA=true is not allowed when APP_DATA_MODE is " + appMode + ". Set ALLOW_DEMO_DATA=false."
+        );
+      }
     }
 
     const liveStrict = env.LIVE_FEED_STRICT?.trim();
     if (liveStrict && !["true", "false", "1", "0"].includes(liveStrict.toLowerCase())) {
       warnings.push(
-        `LIVE_FEED_STRICT value "${liveStrict}" is not recognized. Use: true, false, 1, or 0.`
+        `[DEMO] LIVE_FEED_STRICT value "${liveStrict}" is not recognized. Use: true, false, 1, or 0.`
       );
     }
 
-    // ─── REQUIRED: Demo mode restriction in production ───────────────────────
-    const isProd = env.NODE_ENV === "production";
-    const allowDemo = env.ALLOW_DEMO_DATA === "true";
-    const isDemoMode = (env.APP_DATA_MODE || "demo") === "demo";
+    // ─── SAFETY & REAL EXECUTION CONFIG ─────────────────────────────────────
+    if (env.CHAINSTACK_PRIVATE_KEY?.trim()) {
+      warnings.push(
+        `[SAFETY] CHAINSTACK_PRIVATE_KEY is set. User-wallet signed transactions are otherwise recommended.`
+      );
+    }
 
-    if (isProd && (allowDemo || isDemoMode)) {
-      errors.push(
-        "CONF_ERROR: Demo data fallback is not allowed in production. " +
-        "To run in production, set APP_DATA_MODE=live, ALLOW_DEMO_DATA=false, and configure real credentials."
+    const mainnetWrites = env.ALLOW_MAINNET_WRITES === "true";
+    if (mainnetWrites) {
+      warnings.push(
+        `[SAFETY] ALLOW_MAINNET_WRITES is enabled. Live writes on Mainnet networks are active.`
       );
     }
 
@@ -131,7 +165,7 @@ export class EnvironmentValidator {
     console.log(`  Chain ID: ${env.CHAINSTACK_CHAIN_ID || "1"}`);
     console.log(`  RPC URL: ${env.CHAINSTACK_RPC_URL ? `configured (${this.safeHost(env.CHAINSTACK_RPC_URL)})` : "not set"}`);
     console.log(`  WSS URL: ${env.CHAINSTACK_WSS_URL ? `configured (${this.safeHost(env.CHAINSTACK_WSS_URL)})` : "not set"}`);
-    const appMode = env.APP_DATA_MODE || "demo";
+    const appMode = env.APP_DATA_MODE || "live";
     console.log(`  Data Mode: ${appMode}`);
     const strict = env.LIVE_FEED_STRICT === "true" || env.LIVE_FEED_STRICT === "1";
     console.log(`  Strict Mode: ${strict ? "ENABLED (no fallback to demo)" : "disabled (fallback to demo)"}`);
