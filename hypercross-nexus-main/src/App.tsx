@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useAccount, useDisconnect } from "wagmi";
 import CheckoutPage from "./pages/CheckoutPage";
 import BillingPage from "./pages/BillingPage";
 import DigitalAssetsPage from "./pages/DigitalAssetsPage";
@@ -130,6 +131,8 @@ interface PaymentConnection {
 type PlanTier = 'starter' | 'pro' | 'enterprise' | 'enterprise_deluxe';
 
 export default function App() {
+  const { isConnected: isWalletConnected } = useAccount();
+  const { disconnect, isPending: isDisconnecting } = useDisconnect();
   const [data, setData] = useState<ChainstackStatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -599,6 +602,17 @@ export default function App() {
             <Badge className="bg-[#ffae00]/20 text-[#ffae00] border border-[#ffae00]/40 uppercase tracking-wider">
               {selectedPlan}
             </Badge>
+            {isWalletConnected && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-white/20 text-white/70 hover:bg-white/10"
+                disabled={isDisconnecting}
+                onClick={() => disconnect()}
+              >
+                {isDisconnecting ? "Disconnecting..." : "Disconnect Wallet"}
+              </Button>
+            )}
             <ConnectButton />
           </div>
         </header>
