@@ -1,0 +1,80 @@
+{
+  "appName": "Hyper-Cross Nexus",
+  "appVersion": "1.0.0",
+  "appDescription": "Enterprise-grade DeFi & RWA platform on Chainstack-powered blockchain infrastructure",
+  "logo": "https://via.placeholder.com/48",
+  "favicon": "https://via.placeholder.com/32",
+  "primaryColor": "#1500ff",
+  "secondaryColor": "#c300ff",
+  "accentColor": "#ffae00",
+  "modules": {
+    "overview": { "enabled": true, "label": "Overview" },
+    "fabricConnect": { "enabled": true, "label": "Chainstack Connection" },
+    "digitalAssets": { "enabled": true, "label": "Digital Assets", "dataSource": "chainstack-evm", "network": "ethereum" },
+    "rwa": { "enabled": true, "label": "RWA Infrastructure", "dataSource": "chainstack-evm", "network": "ethereum" },
+    "nftMarketplace": { "enabled": true, "label": "NFT Marketplace", "dataSource": "chainstack-evm", "network": "polygon" },
+    "tokenFundraising": { "enabled": true, "label": "Token Fundraising", "dataSource": "chainstack-evm", "network": "base" },
+    "tokenLaunchpad": { "enabled": true, "label": "Token Launchpad", "dataSource": "chainstack-evm", "network": "arbitrum" },
+    "sportsTrading": { "enabled": true, "label": "Sports Trading", "dataSource": "external-api", "apiUrl": "https://api.sportsdata.io" },
+    "derivatives": { "enabled": true, "label": "Derivatives", "dataSource": "external-api", "apiUrl": "https://api.coingecko.com" },
+    "copyTrading": { "enabled": true, "label": "Copy Trading", "dataSource": "fabric-chaincode", "chaincode": "copytrading" },
+    "miningPools": { "enabled": true, "label": "Mining Pools", "dataSource": "external-api", "apiUrl": "https://api.mining.example.com" },
+    "custody": { "enabled": true, "label": "Custody & Storage", "dataSource": "fabric-chaincode", "chaincode": "custody" }
+  },
+  "datasources": {
+    "chainstack": {
+      "baseUrl": "https://your-chainstack-rpc-endpoint",
+      "type": "json-rpc",
+      "timeout": 15000
+    },
+    "fabric": {
+      "restGatewayUrl": "",
+      "type": "legacy-fabric",
+      "timeout": 15000,
+      "channels": ["default-channel", "rwa-channel", "nft-channel"]
+    },
+    "coingecko": {
+      "baseUrl": "https://api.coingecko.com/api/v3",
+      "type": "rest",
+      "timeout": 5000,
+      "free": true
+    },
+    "sportsdata": {
+      "baseUrl": "https://api.sportsdata.io/v3",
+      "type": "rest",
+      "timeout": 5000,
+      "requiresApiKey": true
+    }
+  },
+  "auth": {
+    "oauth": {
+      "google": {
+        "enabled": true,
+        "clientId": "${VITE_GOOGLE_CLIENT_ID}",
+        "scopes": ["openid", "email", "profile"]
+      },
+      "apple": {
+        "enabled": true,
+        "clientId": "${VITE_APPLE_CLIENT_ID}",
+        "scopes": ["name", "email"]
+      }
+    },
+    "web3": {
+      "enabled": true,
+      "chains": ["mainnet", "polygon", "arbitrum", "base"]
+    }
+  },
+  "desktop": {
+    "enabled": true,
+    "autoUpdate": true,
+    "storageDir": "~/.hypercross-nexus",
+    "database": "local.db"
+  },
+  "branding": {
+    "companyName": "Your Company",
+    "supportEmail": "support@example.com",
+    "websiteUrl": "https://example.com",
+    "docsUrl": "https://docs.example.com",
+    "termsUrl": "https://example.com/terms"
+  }
+}
