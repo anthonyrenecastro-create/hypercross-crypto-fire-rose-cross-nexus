@@ -2,8 +2,6 @@ import React, { useState } from "react";
 import { CreditCard, ArrowLeft, Shield, CheckCircle2, Loader2, Mail } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
 type PlanTier = "starter" | "pro" | "enterprise" | "enterprise_deluxe";
@@ -49,9 +47,9 @@ const PLAN_DETAILS: Record<
     ],
   },
   enterprise_deluxe: {
-    name: "Enterprise Deluxe",
-    price: "Starting at $999",
-    priceNote: "contact sales",
+    name: "Enterprise Custom Deluxe",
+    price: "$225",
+    priceNote: "per month",
     color: "#facc15",
     features: [
       "Everything in Enterprise",
@@ -71,14 +69,11 @@ interface CheckoutPageProps {
 
 export default function CheckoutPage({ plan, email, onBack, onSuccess }: CheckoutPageProps) {
   const provider = "stripe";
-  const [contactName, setContactName] = useState("");
-  const [contactMessage, setContactMessage] = useState("");
-  const [contactSent, setContactSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const planDef = PLAN_DETAILS[plan];
-  const isBillablePlan = plan === "starter" || plan === "pro" || plan === "enterprise";
+  const isBillablePlan = true;
   // Stripe is the only active provider for all self-serve plans.
   const allowedProviders = ["stripe"];
 
@@ -109,89 +104,6 @@ export default function CheckoutPage({ plan, email, onBack, onSuccess }: Checkou
       setLoading(false);
     }
   };
-
-  const handleEnterpriseSend = () => {
-    // In production, POST to /api/contact-sales
-    setContactSent(true);
-  };
-
-  if (plan === "enterprise_deluxe") {
-    return (
-      <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-6">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute -top-40 -left-28 h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle,rgba(195,0,255,0.18)_0%,transparent_65%)]" />
-          <div className="absolute -bottom-40 -right-28 h-[400px] w-[400px] rounded-full bg-[radial-gradient(circle,rgba(21,0,255,0.14)_0%,transparent_65%)]" />
-        </div>
-        <div className="relative z-10 w-full max-w-lg">
-          <button onClick={onBack} className="flex items-center gap-2 text-white/50 hover:text-white text-sm mb-8 transition-colors">
-            <ArrowLeft className="h-4 w-4" /> Back to plans
-          </button>
-          {!contactSent ? (
-            <Card className="bg-black/60 border border-white/10 backdrop-blur-xl">
-              <CardHeader>
-                <div className="h-1 w-16 rounded-full mb-4" style={{ background: `linear-gradient(to right, ${planDef.color}, #7e22ce)` }} />
-                <CardTitle className="text-white text-2xl">Contact Sales</CardTitle>
-                <CardDescription className="text-white/55">
-                  Tell us about your use case and we'll tailor an Enterprise Deluxe engagement.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label className="text-white/70">Your name</Label>
-                  <Input
-                    value={contactName}
-                    onChange={(e) => setContactName(e.target.value)}
-                    placeholder="Jane Smith"
-                    className="mt-1 bg-white/5 border-white/10 text-white"
-                  />
-                </div>
-                <div>
-                  <Label className="text-white/70">Email</Label>
-                  <Input
-                    value={email}
-                    readOnly
-                    className="mt-1 bg-white/5 border-white/10 text-white/60 cursor-not-allowed"
-                  />
-                </div>
-                <div>
-                  <Label className="text-white/70">Tell us about your needs</Label>
-                  <textarea
-                    value={contactMessage}
-                    onChange={(e) => setContactMessage(e.target.value)}
-                    rows={4}
-                    placeholder="We're looking to deploy cross-chain custody for..."
-                    className="mt-1 w-full rounded-md bg-white/5 border border-white/10 text-white px-3 py-2 text-sm placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-[#c300ff]"
-                  />
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button
-                  className="w-full"
-                  style={{ background: "linear-gradient(to right, #c300ff, #7e22ce)" }}
-                  onClick={handleEnterpriseSend}
-                  disabled={!contactName.trim() || !contactMessage.trim()}
-                >
-                  <Mail className="h-4 w-4 mr-2" />
-                  Send to Sales Team
-                </Button>
-              </CardFooter>
-            </Card>
-          ) : (
-            <Card className="bg-black/60 border border-white/10 backdrop-blur-xl text-center">
-              <CardContent className="pt-10 pb-10 space-y-4">
-                <CheckCircle2 className="h-14 w-14 text-green-400 mx-auto" />
-                <h2 className="text-2xl font-bold text-white">Message Received</h2>
-                <p className="text-white/55 text-sm">Our enterprise team will reach out to {email} within 1 business day.</p>
-                <Button variant="outline" className="border-white/20 text-white/70 mt-4" onClick={onBack}>
-                  Back to plans
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-6">

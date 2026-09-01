@@ -1528,7 +1528,7 @@ function PaymentSettingsPage({
     starter: ["stripe"],
     pro: ["stripe"],
     enterprise: ["stripe", "bank-link"],
-    enterprise_deluxe: ["bank-link"],
+    enterprise_deluxe: ["stripe"],
   };
 
   const allowedProviders = PLAN_FEATURES[plan] || [];
@@ -1839,9 +1839,9 @@ function PaywallScreen({ onSelectPlan }: { onSelectPlan: (plan: PlanTier) => voi
     },
     {
       id: 'enterprise_deluxe',
-      label: 'Enterprise Deluxe',
-      price: 'Starting at $999',
-      summary: 'A fully custom engagement with a bespoke app build.',
+      label: 'Enterprise Custom Deluxe',
+      price: '$225/mo',
+      summary: 'Custom onboarding, selected enhancements, and a bespoke app engagement.',
       features: ['Everything in Enterprise', 'White-glove onboarding', '5 bonus features, custom-selected for you', 'Custom app by Axiom Zeta Innovations'],
       accent: 'from-[#facc15] to-[#c300ff]',
     },

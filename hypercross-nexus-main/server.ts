@@ -152,14 +152,11 @@ const PLAN_PAYMENT_FEATURES: Record<PlanTier, PaymentProvider[]> = {
   starter: ["stripe"],
   pro: ["stripe"],
   enterprise: ["stripe"],
-  enterprise_deluxe: ["bank-link"],
+  enterprise_deluxe: ["stripe"],
 };
 
-// Subscription plan definitions. Enterprise Deluxe is a custom, sales-assisted
-// engagement (onboarding + a bespoke app build) and is intentionally excluded
-// from self-serve Stripe checkout.
 const SUBSCRIPTION_PLANS: Record<
-  Exclude<PlanTier, "enterprise_deluxe">,
+  PlanTier,
   { name: string; priceUsd: number; interval: "month"; stripePriceId: string | null; paypalPlanId: string | null }
 > = {
   starter: {
@@ -182,6 +179,13 @@ const SUBSCRIPTION_PLANS: Record<
     interval: "month",
     stripePriceId: process.env.STRIPE_PRICE_ENTERPRISE || null,
     paypalPlanId: process.env.PAYPAL_PLAN_ENTERPRISE || null,
+  },
+  enterprise_deluxe: {
+    name: "Enterprise Custom Deluxe",
+    priceUsd: 225,
+    interval: "month",
+    stripePriceId: process.env.STRIPE_PRICE_ENTERPRISE_CUSTOM_DELUXE || null,
+    paypalPlanId: null,
   },
 };
 
@@ -1733,7 +1737,7 @@ async function startServer() {
   }
 
   async function stripeCreateCheckoutSession(
-    plan: Exclude<PlanTier, "enterprise_deluxe">,
+    plan: PlanTier,
     email: string,
     stripeCustomerId: string,
     successUrl: string,
@@ -1834,7 +1838,7 @@ async function startServer() {
   }
 
   async function paypalCreateOrder(
-    plan: Exclude<PlanTier, "enterprise_deluxe">,
+    plan: PlanTier,
     email: string,
     returnUrl: string,
     cancelUrl: string
@@ -1876,10 +1880,7 @@ async function startServer() {
       const baseUrl = `${process.env.OAUTH_REDIRECT_BASE || "http://localhost:3000"}`;
 
       if (!email) return res.status(400).json({ error: "email is required" });
-      if (plan === "enterprise_deluxe") {
-        return res.status(400).json({ error: "Enterprise Deluxe requires contacting sales." });
-      }
-      if (plan !== "starter" && plan !== "pro" && plan !== "enterprise") {
+      if (plan !== "starter" && plan !== "pro" && plan !== "enterprise" && plan !== "enterprise_deluxe") {
         return res.status(400).json({ error: "plan must be starter, pro, enterprise, or enterprise_deluxe" });
       }
       if (provider !== "stripe") {
@@ -1908,7 +1909,7 @@ async function startServer() {
         const priorSubscriptions = queries.subscriptions.listByEmail.all(email) as any[];
         const trialDays = priorSubscriptions.length === 0 ? 14 : 0;
         const session = await stripeCreateCheckoutSession(
-          plan as Exclude<PlanTier, "enterprise_deluxe">,
+          plan,
           email,
           stripeCustomerId,
           successUrl,
