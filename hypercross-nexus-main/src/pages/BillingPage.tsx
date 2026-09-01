@@ -15,9 +15,9 @@ const PLAN_DETAILS: Record<PlanTier, { name: string; price: string; color: strin
 
 interface Subscription {
   id: string;
-  provider: "stripe" | "paypal";
+  provider: "stripe" | "paypal" | "trial";
   planTier: PlanTier;
-  status: "active" | "canceled" | "past_due";
+  status: "active" | "trialing" | "canceled" | "past_due";
   currentPeriodStart: string | null;
   currentPeriodEnd: string | null;
   canceledAt: string | null;
@@ -40,10 +40,12 @@ function fmtDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function ProviderIcon({ provider }: { provider: "stripe" | "paypal" }) {
+function ProviderIcon({ provider }: { provider: "stripe" | "paypal" | "trial" }) {
   return provider === "stripe"
     ? <CreditCard className="h-4 w-4 text-[#635bff]" />
-    : <CircleDollarSign className="h-4 w-4 text-[#0070ba]" />;
+    : provider === "paypal"
+    ? <CircleDollarSign className="h-4 w-4 text-[#0070ba]" />
+    : <Calendar className="h-4 w-4 text-white/50" />;
 }
 
 export default function BillingPage({ email, onUpgrade }: BillingPageProps) {
@@ -128,6 +130,9 @@ export default function BillingPage({ email, onUpgrade }: BillingPageProps) {
             {!loading && subscription?.status === "active" && (
               <Badge className="bg-green-500/20 text-green-400 border-0 text-xs">Active</Badge>
             )}
+            {!loading && subscription?.status === "trialing" && (
+              <Badge className="bg-purple-500/20 text-purple-300 border-0 text-xs">Free Trial</Badge>
+            )}
             {!loading && subscription?.status === "canceled" && (
               <Badge className="bg-red-500/20 text-red-400 border-0 text-xs">Canceled</Badge>
             )}
@@ -149,6 +154,9 @@ export default function BillingPage({ email, onUpgrade }: BillingPageProps) {
                   <div className="h-1 w-10 rounded-full mb-2" style={{ background: `linear-gradient(to right, ${planDef.color}, #7e22ce)` }} />
                   <p className="text-2xl font-bold text-white">{planDef.name}</p>
                   <p className="text-sm text-white/45 mt-0.5">{planDef.price}</p>
+                  {subscription?.status === "trialing" && (
+                    <p className="text-xs text-purple-300 mt-1">14-day free trial — no charge until it ends</p>
+                  )}
                 </div>
               </div>
 
@@ -170,14 +178,30 @@ export default function BillingPage({ email, onUpgrade }: BillingPageProps) {
                       <div>
                         <p className="text-xs text-white/40 mb-1 flex items-center gap-1">
                           <Calendar className="h-3.5 w-3.5" />
-                          {subscription.status === "canceled" ? "Access until" : "Next renewal"}
+                          {subscription.status === "canceled"
+                            ? "Access until"
+                            : subscription.status === "trialing"
+                            ? "Trial ends"
+                            : "Next renewal"}
                         </p>
                         <p className="text-sm text-white">{fmtDate(subscription.currentPeriodEnd)}</p>
                       </div>
                       <div>
                         <p className="text-xs text-white/40 mb-1">Status</p>
-                        <p className={`text-sm font-medium ${subscription.status === "active" ? "text-green-400" : "text-red-400"}`}>
-                          {subscription.status === "active" ? "Active" : "Canceled"}
+                        <p
+                          className={`text-sm font-medium ${
+                            subscription.status === "active"
+                              ? "text-green-400"
+                              : subscription.status === "trialing"
+                              ? "text-purple-300"
+                              : "text-red-400"
+                          }`}
+                        >
+                          {subscription.status === "active"
+                            ? "Active"
+                            : subscription.status === "trialing"
+                            ? "Free Trial"
+                            : "Canceled"}
                         </p>
                       </div>
                     </>
@@ -199,10 +223,10 @@ export default function BillingPage({ email, onUpgrade }: BillingPageProps) {
             style={{ background: "linear-gradient(135deg, #1500ff, #c300ff)" }}
             onClick={onUpgrade}
           >
-            {subscription?.status === "active" ? "Change Plan" : "Subscribe Now"}
+            {subscription?.status === "active" || subscription?.status === "trialing" ? "Change Plan" : "Subscribe Now"}
           </Button>
 
-          {subscription?.status === "active" && !showConfirm && (
+          {(subscription?.status === "active" || subscription?.status === "trialing") && !showConfirm && (
             <Button
               variant="outline"
               className="border-white/20 text-white/60 hover:border-red-500/50 hover:text-red-400"

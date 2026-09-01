@@ -419,7 +419,7 @@ async function startServer() {
 
   ensureDefaultLinkedAccounts();
 
-  const TRIAL_PLAN = "trader";
+  const TRIAL_PLAN: Exclude<PlanTier, "enterprise"> = "pro";
   const TRIAL_DAYS = 14;
 
   // Grants every new email signup full-featured access for TRIAL_DAYS, no payment required.
@@ -1753,7 +1753,8 @@ async function startServer() {
     email: string,
     stripeCustomerId: string,
     successUrl: string,
-    cancelUrl: string
+    cancelUrl: string,
+    trialDays = 0
   ): Promise<{ id: string; url: string }> {
     const planDef = SUBSCRIPTION_PLANS[plan];
     if (!planDef.stripePriceId) {
@@ -1774,6 +1775,7 @@ async function startServer() {
       "line_items[0][quantity]": "1",
       success_url: successUrl,
       cancel_url: cancelUrl,
+      ...(trialDays > 0 ? { "subscription_data[trial_period_days]": String(trialDays) } : {}),
       "subscription_data[metadata][plan_tier]": plan,
       "metadata[plan_tier]": plan,
       "metadata[email]": email,
@@ -1895,12 +1897,16 @@ async function startServer() {
 
         const successUrl = `${baseUrl}/?checkout=stripe-success&session_id={CHECKOUT_SESSION_ID}&plan=${plan}`;
         const cancelUrl = `${baseUrl}/?checkout=canceled&plan=${plan}`;
+        // Only give a Stripe trial to customers who have never had a subscription before.
+        const priorSubscriptions = queries.subscriptions.listByEmail.all(email) as any[];
+        const trialDays = priorSubscriptions.length === 0 ? 14 : 0;
         const session = await stripeCreateCheckoutSession(
           plan as Exclude<PlanTier, "enterprise">,
           email,
           stripeCustomerId,
           successUrl,
-          cancelUrl
+          cancelUrl,
+          trialDays
         );
 
         return res.json({ provider: "stripe", sessionId: session.id, url: session.url });
