@@ -30,9 +30,7 @@ import {
   Network,
   CheckCircle2,
   XCircle,
-  Copy,
   ChevronRight,
-  Unplug,
   Send,
   Coins,
   Landmark,
@@ -74,7 +72,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-interface KaleidoData {
+// Chainstack-derived status shown on the overview dashboard (no fabricated data).
+interface ChainstackStatusData {
   nodeState: string;
   chaosLevel: string;
   damping: string;
@@ -127,7 +126,7 @@ interface PaymentConnection {
 type PlanTier = 'starter' | 'pro' | 'enterprise';
 
 export default function App() {
-  const [data, setData] = useState<KaleidoData | null>(null);
+  const [data, setData] = useState<ChainstackStatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userEmail, setUserEmail] = useState<string>("");
@@ -150,7 +149,7 @@ export default function App() {
   const [paymentsError, setPaymentsError] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PlanTier | null>(null);
   const [oauthWindow, setOAuthWindow] = useState<Window | null>(null);
-  type PageKey = 'overview' | 'fabric' | 'assets' | 'rwa' | 'fundraising' | 'nft' | 'launchpad' | 'sports' | 'derivatives' | 'copytrading' | 'mining' | 'custody' | 'settings' | 'billing';
+  type PageKey = 'overview' | 'chainstack' | 'assets' | 'rwa' | 'fundraising' | 'nft' | 'launchpad' | 'sports' | 'derivatives' | 'copytrading' | 'mining' | 'custody' | 'settings' | 'billing';
   const [activePage, setActivePage] = useState<PageKey>('overview');
 
   const loadPaymentConnections = async () => {
@@ -449,21 +448,30 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Chainstack is the sole blockchain provider; no legacy fallback on failure.
     const fetchData = async () => {
       try {
         const response = await fetch("/api/blockchain/status");
-        if (response.ok) {
-          const result = await response.json();
-          setData(result);
-        } else {
-          const legacy = await fetch("/api/kaleido");
-          if (legacy.ok) {
-            const fallback = await legacy.json();
-            setData(fallback);
-          }
-        }
+        const result = await response.json().catch(() => null);
+        const connected = response.ok && result?.connected === true;
+        setData({
+          nodeState: result?.network ?? "unknown",
+          chaosLevel: result?.live ? "Live" : "Degraded",
+          damping: result?.blockNumber != null ? String(result.blockNumber) : "—",
+          syncStatus: connected ? "Synced" : "Disconnected",
+          recentBlocks: [],
+          chartData: [],
+        });
       } catch (error) {
-        console.error("Failed to fetch blockchain data:", error);
+        console.error("Failed to fetch Chainstack status:", error);
+        setData({
+          nodeState: "unknown",
+          chaosLevel: "Degraded",
+          damping: "—",
+          syncStatus: "Disconnected",
+          recentBlocks: [],
+          chartData: [],
+        });
       } finally {
         setLoading(false);
       }
@@ -526,7 +534,7 @@ export default function App() {
         <nav className="flex-1 p-4 overflow-y-auto">
           <SidebarSection label="Platform" />
           <NavItem icon={<LayoutDashboard size={18} />} label="Overview" active={activePage === 'overview'} onClick={() => setActivePage('overview')} />
-          <NavItem icon={<Network size={18} />} label="Chainstack Connect" active={activePage === 'fabric'} onClick={() => setActivePage('fabric')} />
+          <NavItem icon={<Network size={18} />} label="Chainstack Connect" active={activePage === 'chainstack'} onClick={() => setActivePage('chainstack')} />
 
           <SidebarSection label="Asset Services" />
           <NavItem icon={<Coins size={18} />} label="Digital Assets" active={activePage === 'assets'} onClick={() => setActivePage('assets')} />
@@ -596,9 +604,9 @@ export default function App() {
         </header>
 
         {/* Page Content */}
-        {activePage === 'fabric' && (
+        {activePage === 'chainstack' && (
           <div className="flex-1 overflow-y-auto p-8">
-            <FabricConnectPage />
+            <ChainstackConnectPage />
           </div>
         )}
         {activePage === 'assets' && (
@@ -662,19 +670,19 @@ export default function App() {
           {/* Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard 
-              title="Node State (Φ)" 
+              title="Network" 
               value={data?.nodeState} 
               loading={loading} 
               borderClass="neon-border-blue"
             />
             <StatCard 
-              title="Chaos Level (Γ)" 
+              title="Status" 
               value={data?.chaosLevel} 
               loading={loading} 
               borderClass="neon-border-red"
             />
             <StatCard 
-              title="Damping (Λ)" 
+              title="Block Number" 
               value={data?.damping} 
               loading={loading} 
               borderClass="neon-border-purple"
@@ -684,7 +692,7 @@ export default function App() {
               value={data?.syncStatus} 
               loading={loading} 
               borderClass="neon-border-gold"
-              valueClass={data?.syncStatus === "Synced" ? "text-green-400" : "text-yellow-400"}
+              valueClass={data?.syncStatus === "Synced" ? "text-green-400" : data?.syncStatus === "Disconnected" ? "text-red-400" : "text-yellow-400"}
             />
           </div>
 
@@ -1948,419 +1956,131 @@ function NavItem({ icon, label, active = false, onClick }: { icon: React.ReactNo
   );
 }
 
-// ─── Kaleido Hyperledger Fabric Connection Portal ───────────────────────────
+// ─── Chainstack Connection Status (read-only, no signing) ──────────────────
 
-interface FabricConnection {
-  endpoint: string;
-  username: string;
-  password: string;
-  channels: any;
-  source?: "manual" | "auto-env" | "auto-config";
-}
-
-interface FabricConnectionStatus {
+interface ChainstackStatus {
+  provider: string;
+  network: string;
+  chainId: number | null;
   connected: boolean;
-  source: "manual" | "auto-env" | "auto-config" | "none";
-  endpoint: string | null;
-  username: string | null;
-  channels: any;
+  rpcHealthy: boolean;
+  live: boolean;
+  blockNumber: number | null;
+  testnet: boolean;
+  explorerUrl: string | null;
   error: string | null;
+  lastChecked: string | null;
 }
 
-function FabricConnectPage() {
-  const [endpoint, setEndpoint] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [subAccount, setSubAccount] = useState("");
-  const [connecting, setConnecting] = useState(false);
-  const [connection, setConnection] = useState<FabricConnection | null>(null);
-  const [connectError, setConnectError] = useState<string | null>(null);
-  const [checkingConnection, setCheckingConnection] = useState(true);
+function ChainstackConnectPage() {
+  const [status, setStatus] = useState<ChainstackStatus | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Query state
-  const [channel, setChannel] = useState("");
-  const [chaincode, setChaincode] = useState("");
-  const [func, setFunc] = useState("");
-  const [argsStr, setArgsStr] = useState("");
-  const [callType, setCallType] = useState<'query' | 'invoke'>('query');
-  const [executing, setExecuting] = useState(false);
-  const [result, setResult] = useState<any>(null);
-  const [execError, setExecError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const loadStatus = async () => {
+    try {
+      const res = await fetch("/api/blockchain/status");
+      const result = await res.json();
+      setStatus(result);
+    } catch {
+      setStatus(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const checkConnectionStatus = async () => {
-      try {
-        const res = await fetch("/api/live/connection-status");
-        if (!res.ok) return;
-        const status: FabricConnectionStatus = await res.json();
-
-        if (status.connected && status.endpoint && status.username) {
-          setConnection({
-            endpoint: status.endpoint,
-            username: status.username,
-            password: "",
-            channels: status.channels,
-            source: status.source === "none" ? undefined : status.source,
-          });
-        } else if (status.error) {
-          setConnectError(status.error);
-        }
-      } catch {
-        // Non-fatal: if status endpoint is temporarily unavailable, user can still connect manually.
-      } finally {
-        setCheckingConnection(false);
-      }
-    };
-
-    checkConnectionStatus();
+    loadStatus();
+    const interval = setInterval(loadStatus, 10000);
+    return () => clearInterval(interval);
   }, []);
 
-  const handleConnect = async () => {
-    setConnecting(true);
-    setConnectError(null);
-    try {
-      const res = await fetch("/api/fabric-connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint: endpoint.trim(), username: username.trim(), password, subAccount: subAccount.trim() }),
-      });
-      const data = await res.json();
-      if (data.connected) {
-        setConnection({ endpoint: endpoint.trim(), username: username.trim(), password, channels: data.channels, source: "manual" });
-      } else {
-        setConnectError(data.error ?? "Connection failed");
-      }
-    } catch (e: any) {
-      setConnectError("Network error: " + (e?.message ?? "unknown"));
-    } finally {
-      setConnecting(false);
-    }
-  };
-
-  const handleExecute = async () => {
-    if (!connection) return;
-    setExecuting(true);
-    setResult(null);
-    setExecError(null);
-    const apiRoute = callType === 'query' ? '/api/fabric-query' : '/api/fabric-invoke';
-    try {
-      const res = await fetch(apiRoute, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          endpoint: connection.endpoint,
-          username: connection.username,
-          password: connection.password,
-          channel: channel.trim(),
-          chaincode: chaincode.trim(),
-          func: func.trim(),
-          args: argsStr.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setExecError(data.error ?? `HTTP ${res.status}`);
-      } else {
-        setResult(data);
-      }
-    } catch (e: any) {
-      setExecError("Network error: " + (e?.message ?? "unknown"));
-    } finally {
-      setExecuting(false);
-    }
-  };
-
-  const handleCopy = () => {
-    if (result) {
-      navigator.clipboard.writeText(JSON.stringify(result, null, 2));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }
-  };
-
-  const channelList: string[] = Array.isArray(connection?.channels)
-    ? connection.channels
-    : Array.isArray(connection?.channels?.channels)
-    ? connection.channels.channels
-    : [];
+  const connected = status?.connected === true;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      {/* Page Title */}
       <div>
         <h2 className="text-2xl font-bold text-white flex items-center gap-3">
           <Network className="h-6 w-6 text-[#1500ff]" />
-          Kaleido Hyperledger Fabric
+          Chainstack Connection
         </h2>
         <p className="text-white/50 mt-1 text-sm">
-          Server-managed auto-connect is enabled when Fabric credentials are configured in environment variables.
+          Live RPC connection status for the configured Chainstack provider. Read-only — no signing keys are managed here.
         </p>
       </div>
 
-      {checkingConnection && (
-        <Card className="glass-panel border border-white/10">
-          <CardContent className="py-4 text-sm text-white/60 flex items-center gap-2">
-            <span className="animate-spin h-4 w-4 border-2 border-white/50 border-t-transparent rounded-full" />
-            Checking server Fabric connection status...
-          </CardContent>
-        </Card>
-      )}
-
-      {!connection ? (
-        // ── Connection Form ──────────────────────────────────────────────────
-        <Card className="glass-panel neon-border-blue border-t-2">
-          <CardHeader>
-            <CardTitle className="text-white text-lg">Connect to Network</CardTitle>
-            <CardDescription className="text-white/50">
-              Manual fallback only. Most users should be auto-connected by server configuration.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-white/70">REST Gateway URL</Label>
-              <Input
-                value={endpoint}
-                onChange={(e) => setEndpoint(e.target.value)}
-                placeholder="https://u0abc123-u0xyz456-connect.us0-aws.kaleido.io"
-                className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-[#1500ff]"
-              />
+      <Card className={`glass-panel border-t-2 ${connected ? "neon-border-blue" : "border-red-500/50"}`}>
+        <CardHeader>
+          <CardTitle className="text-white text-lg flex items-center gap-2">
+            {loading ? (
+              <span className="animate-spin h-4 w-4 border-2 border-white/50 border-t-transparent rounded-full" />
+            ) : connected ? (
+              <CheckCircle2 className="h-5 w-5 text-green-400" />
+            ) : (
+              <XCircle className="h-5 w-5 text-red-400" />
+            )}
+            {loading ? "Checking Chainstack connection…" : connected ? "Connected" : "Disconnected"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-white/40 uppercase text-xs tracking-wider">Network</p>
+              <p className="text-white/90 font-mono">{status?.network ?? "—"}</p>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-white/70">App Credential Username</Label>
-                <Input
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="u0miwg2dlc"
-                  className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-[#1500ff]"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-white/70">App Credential Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-white/40" />
-                  <Input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="●●●●●●●●●●●●"
-                    className="pl-10 bg-black/50 border-white/10 text-white placeholder:text-white/30 focus-visible:ring-[#1500ff]"
-                  />
-                </div>
-              </div>
+            <div>
+              <p className="text-white/40 uppercase text-xs tracking-wider">Chain ID</p>
+              <p className="text-white/90 font-mono">{status?.chainId ?? "—"}</p>
             </div>
-
-            <div className="space-y-2">
-              <Label className="text-white/70">
-                Sub-account <span className="text-white/30 font-normal">(department · IoT sensor group · Fabric MSP org)</span>
-              </Label>
-              <Input
-                value={subAccount}
-                onChange={(e) => setSubAccount(e.target.value)}
-                placeholder="finance-dept  /  sensors-floor-3  /  org1.example.com"
-                className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-[#1500ff]"
-              />
-              <p className="text-white/25 text-xs">
-                Sub-accounts map to Fabric enrollment IDs with independent damping parameters (γ). Leave blank to use the root identity.
+            <div>
+              <p className="text-white/40 uppercase text-xs tracking-wider">RPC Health</p>
+              <p className={status?.rpcHealthy ? "text-green-400" : "text-red-400"}>
+                {status?.rpcHealthy ? "Healthy" : "Unhealthy"}
               </p>
             </div>
-
-            {connectError && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-                <XCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                <span>{connectError}</span>
-              </div>
-            )}
-
-            <Button
-              onClick={handleConnect}
-              disabled={connecting || !endpoint || !username || !password}
-              className="w-full bg-gradient-to-r from-[#1500ff] to-[#c300ff] hover:opacity-90 text-white border-0 shadow-[0_0_15px_rgba(21,0,255,0.4)] disabled:opacity-40"
-            >
-              {connecting ? (
-                <span className="flex items-center gap-2">
-                  <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-                  Connecting…
-                </span>
-              ) : (
-                <span className="flex items-center gap-2">
-                  <Network className="h-4 w-4" /> Connect to Network
-                </span>
-              )}
-            </Button>
-
-            <p className="text-xs text-white/30 text-center">
-              Credentials are proxied server-side and never returned to the browser.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        // ── Connected State ──────────────────────────────────────────────────
-        <>
-          {/* Connection badge */}
-          <div className="flex items-center justify-between p-4 rounded-xl glass-panel border border-green-500/30 bg-green-500/5">
-            <div className="flex items-center gap-3">
-              <CheckCircle2 className="h-5 w-5 text-green-400" />
-              <div>
-                <p className="text-green-400 font-medium text-sm">Connected</p>
-                <p className="text-white/40 text-xs font-mono mt-0.5 truncate max-w-xs">{connection.endpoint}</p>
-                {connection.source && connection.source !== "manual" && (
-                  <p className="text-white/30 text-xs mt-1">Managed automatically by server configuration.</p>
-                )}
-              </div>
+            <div>
+              <p className="text-white/40 uppercase text-xs tracking-wider">Block Number</p>
+              <p className="text-white/90 font-mono">{status?.blockNumber ?? "—"}</p>
             </div>
-            {connection.source === "manual" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { setConnection(null); setResult(null); setExecError(null); }}
-                className="text-white/50 hover:text-white hover:bg-white/10 gap-2"
-              >
-                <Unplug className="h-4 w-4" /> Disconnect
-              </Button>
-            )}
+            <div>
+              <p className="text-white/40 uppercase text-xs tracking-wider">Environment</p>
+              <p className="text-white/90">{status?.testnet ? "Testnet" : "Mainnet"}</p>
+            </div>
+            <div>
+              <p className="text-white/40 uppercase text-xs tracking-wider">Last Checked</p>
+              <p className="text-white/90 font-mono">
+                {status?.lastChecked ? new Date(status.lastChecked).toLocaleTimeString() : "—"}
+              </p>
+            </div>
           </div>
 
-          {/* Channels pill list */}
-          {channelList.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-white/50 text-xs uppercase tracking-wider">Available Channels</p>
-              <div className="flex flex-wrap gap-2">
-                {channelList.map((ch: string) => (
-                  <button
-                    key={ch}
-                    onClick={() => setChannel(ch)}
-                    className={`px-3 py-1 rounded-full text-sm border transition-all ${
-                      channel === ch
-                        ? "border-[#1500ff] bg-[#1500ff]/20 text-white"
-                        : "border-white/10 text-white/60 hover:border-white/30 hover:text-white"
-                    }`}
-                  >
-                    {ch}
-                  </button>
-                ))}
-              </div>
+          {status?.error && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+              <XCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <span>{status.error}</span>
             </div>
           )}
 
-          {/* Chaincode interaction */}
-          <Card className="glass-panel neon-border-purple border-t-2">
-            <CardHeader>
-              <CardTitle className="text-white text-lg flex items-center gap-2">
-                <ChevronRight className="h-5 w-5 text-[#c300ff]" />
-                Chaincode Interaction
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-white/70">Channel</Label>
-                  <Input
-                    value={channel}
-                    onChange={(e) => setChannel(e.target.value)}
-                    placeholder="default-channel"
-                    className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-[#c300ff]"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-white/70">Chaincode Name</Label>
-                  <Input
-                    value={chaincode}
-                    onChange={(e) => setChaincode(e.target.value)}
-                    placeholder="asset_transfer"
-                    className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-[#c300ff]"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-white/70">Function</Label>
-                <Input
-                  value={func}
-                  onChange={(e) => setFunc(e.target.value)}
-                  placeholder="ReadAsset"
-                  className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-[#c300ff]"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-white/70">Arguments <span className="text-white/30">(JSON array or comma-separated)</span></Label>
-                <Input
-                  value={argsStr}
-                  onChange={(e) => setArgsStr(e.target.value)}
-                  placeholder='["asset1"] or asset1, asset2'
-                  className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-[#c300ff]"
-                />
-              </div>
-
-              {/* Query / Invoke toggle */}
-              <div className="flex gap-2">
-                {(['query', 'invoke'] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setCallType(t)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all capitalize ${
-                      callType === t
-                        ? t === 'query'
-                          ? 'border-[#1500ff] bg-[#1500ff]/20 text-white shadow-[0_0_10px_rgba(21,0,255,0.3)]'
-                          : 'border-[#c300ff] bg-[#c300ff]/20 text-white shadow-[0_0_10px_rgba(195,0,255,0.3)]'
-                        : 'border-white/10 text-white/50 hover:border-white/30 hover:text-white'
-                    }`}
-                  >
-                    {t === 'query' ? 'Query (read)' : 'Invoke (write)'}
-                  </button>
-                ))}
-              </div>
-
-              {execError && (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-                  <XCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>{execError}</span>
-                </div>
-              )}
-
-              <Button
-                onClick={handleExecute}
-                disabled={executing || !channel || !chaincode || !func}
-                className="w-full bg-gradient-to-r from-[#1500ff] to-[#c300ff] hover:opacity-90 text-white border-0 disabled:opacity-40"
-              >
-                {executing ? (
-                  <span className="flex items-center gap-2">
-                    <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-                    Executing…
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-2">
-                    <Send className="h-4 w-4" /> Execute {callType === 'query' ? 'Query' : 'Invoke'}
-                  </span>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Result panel */}
-          {result !== null && (
-            <Card className="glass-panel neon-border-gold border-t-2">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-white text-lg">Response</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCopy}
-                  className="text-white/50 hover:text-white hover:bg-white/10 gap-1 text-xs"
-                >
-                  <Copy className="h-3 w-3" />
-                  {copied ? 'Copied!' : 'Copy'}
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <pre className="bg-black/60 border border-white/10 rounded-lg p-4 text-green-300 text-xs font-mono overflow-auto max-h-96 whitespace-pre-wrap break-all">
-                  {JSON.stringify(result, null, 2)}
-                </pre>
-              </CardContent>
-            </Card>
+          {status?.explorerUrl && (
+            <a
+              href={status.explorerUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[#1500ff] hover:underline text-xs"
+            >
+              View on block explorer <ChevronRight className="h-3 w-3" />
+            </a>
           )}
-        </>
-      )}
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setLoading(true); loadStatus(); }}
+            className="text-white/50 hover:text-white hover:bg-white/10 gap-2"
+          >
+            Refresh Status
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

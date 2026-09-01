@@ -96,6 +96,20 @@ export class EnvironmentValidator {
     }
   }
 
+  /**
+   * Extracts only the hostname from a URL for safe logging.
+   * Chainstack endpoints may embed access tokens/credentials in the path or query string,
+   * so the full URL must never be logged — only the hostname (or "configured"/"not set").
+   */
+  private static safeHost(url: string | undefined): string {
+    if (!url?.trim()) return "not set";
+    try {
+      return new URL(url).hostname || "configured";
+    } catch {
+      return "configured";
+    }
+  }
+
   static logStartupInfo(env: NodeJS.ProcessEnv = process.env): void {
     console.log(`\n${"─".repeat(70)}`);
     console.log(`  BLOCKCHAIN CONFIGURATION`);
@@ -103,10 +117,8 @@ export class EnvironmentValidator {
     console.log(`  Provider: ${env.BLOCKCHAIN_PROVIDER || "chainstack"}`);
     console.log(`  Network: ${env.CHAINSTACK_NETWORK || "ethereum"}`);
     console.log(`  Chain ID: ${env.CHAINSTACK_CHAIN_ID || "1"}`);
-    console.log(`  RPC URL: ${env.CHAINSTACK_RPC_URL?.substring(0, 50)}${(env.CHAINSTACK_RPC_URL?.length ?? 0) > 50 ? "..." : ""}`);
-    if (env.CHAINSTACK_WSS_URL) {
-      console.log(`  WSS URL: ${env.CHAINSTACK_WSS_URL.substring(0, 50)}...`);
-    }
+    console.log(`  RPC URL: ${env.CHAINSTACK_RPC_URL ? `configured (${this.safeHost(env.CHAINSTACK_RPC_URL)})` : "not set"}`);
+    console.log(`  WSS URL: ${env.CHAINSTACK_WSS_URL ? `configured (${this.safeHost(env.CHAINSTACK_WSS_URL)})` : "not set"}`);
     const appMode = env.APP_DATA_MODE || "demo";
     console.log(`  Data Mode: ${appMode}`);
     const strict = env.LIVE_FEED_STRICT === "true" || env.LIVE_FEED_STRICT === "1";

@@ -1,4 +1,4 @@
-import { Contract, JsonRpcProvider, Wallet } from "ethers";
+import { Contract, JsonRpcProvider, Wallet, WebSocketProvider } from "ethers";
 import {
   BlockchainConfigurationError,
   BlockchainConnectionError,
@@ -18,6 +18,11 @@ export class ChainstackProvider implements BlockchainProvider {
   private provider: JsonRpcProvider;
   private wallet?: Wallet;
   private status: ProviderConnectionStatus;
+  private readonly rpcTimeoutMs: number;
+  // Optional subscription transport. HTTPS is always the primary transport;
+  // a WSS failure here must never affect HTTPS RPC operations.
+  private wsProvider?: WebSocketProvider;
+  private wsError: string | null = null;
 
   constructor(private readonly config: ChainstackConfig) {
     const rpcUrl = config.rpcUrl?.trim();
@@ -25,6 +30,7 @@ export class ChainstackProvider implements BlockchainProvider {
       throw new BlockchainConfigurationError("CHAINSTACK_RPC_URL is required.");
     }
 
+    this.rpcTimeoutMs = Number(config.rpcTimeoutMs) > 0 ? Number(config.rpcTimeoutMs) : 15000;
     this.provider = new JsonRpcProvider(rpcUrl, undefined, { staticNetwork: false });
     this.wallet = config.privateKey ? new Wallet(config.privateKey, this.provider) : undefined;
     this.status = {
@@ -38,11 +44,55 @@ export class ChainstackProvider implements BlockchainProvider {
       error: null,
       lastChecked: null,
     };
+
+    const websocketUrl = config.websocketUrl?.trim();
+    if (websocketUrl) {
+      try {
+        this.wsProvider = new WebSocketProvider(websocketUrl);
+      } catch (error) {
+        this.wsProvider = undefined;
+        this.wsError = error instanceof Error ? error.message : "Unable to initialize Chainstack WebSocket provider.";
+      }
+    }
+  }
+
+  /**
+   * Reserved for future subscription/event functionality (e.g. newHeads, pending tx feeds).
+   * Not required for initial Chainstack connectivity — HTTPS remains the primary transport.
+   */
+  getWebSocketStatus(): { configured: boolean; connected: boolean; error: string | null } {
+    return {
+      configured: Boolean(this.config.websocketUrl?.trim()),
+      connected: Boolean(this.wsProvider),
+      error: this.wsError,
+    };
+  }
+
+  /**
+   * Races a Chainstack RPC call against a timeout. Never exposes the endpoint URL.
+   */
+  private withTimeout<T>(promise: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new BlockchainRpcError("Chainstack RPC timed out"));
+      }, this.rpcTimeoutMs);
+
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          clearTimeout(timer);
+          reject(error);
+        }
+      );
+    });
   }
 
   async connect(): Promise<ProviderConnectionStatus> {
     try {
-      const network = await this.provider.getNetwork();
+      const network = await this.withTimeout(this.provider.getNetwork());
       const chainId = Number(network.chainId);
       const configuredChainId = Number(this.config.chainId || chainId);
 
@@ -86,6 +136,14 @@ export class ChainstackProvider implements BlockchainProvider {
   }
 
   async disconnect(): Promise<void> {
+    if (this.wsProvider) {
+      try {
+        await this.wsProvider.destroy();
+      } catch {
+        // Non-fatal: WSS is not the primary transport.
+      }
+      this.wsProvider = undefined;
+    }
     this.status = {
       ...this.status,
       connected: false,
@@ -98,7 +156,7 @@ export class ChainstackProvider implements BlockchainProvider {
 
   async getStatus(): Promise<ProviderConnectionStatus> {
     try {
-      const network = await this.provider.getNetwork();
+      const network = await this.withTimeout(this.provider.getNetwork());
       const blockNumber = await this.getBlockNumber();
       const nextStatus: ProviderConnectionStatus = {
         provider: "chainstack",
@@ -131,7 +189,7 @@ export class ChainstackProvider implements BlockchainProvider {
 
   async healthCheck(): Promise<boolean> {
     try {
-      await this.provider.getBlockNumber();
+      await this.withTimeout(this.provider.getBlockNumber());
       return true;
     } catch {
       return false;
@@ -140,7 +198,7 @@ export class ChainstackProvider implements BlockchainProvider {
 
   async getBlockNumber(): Promise<number> {
     try {
-      return Number(await this.provider.getBlockNumber());
+      return Number(await this.withTimeout(this.provider.getBlockNumber()));
     } catch (error) {
       throw new BlockchainRpcError(error instanceof Error ? error.message : "Unable to read block number.");
     }
