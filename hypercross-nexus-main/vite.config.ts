@@ -13,4 +13,16 @@ export default defineConfig({
       '@': path.resolve(__dirname, '.'),
     },
   },
+  build: {
+    // split large/duplicated dependency trees into separate chunks to ease build memory pressure
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          ethers: ['ethers'],
+          wagmi: ['wagmi', '@rainbow-me/rainbowkit', 'viem'],
+          react: ['react', 'react-dom'],
+        },
+      },
+    },
+  },
 })
