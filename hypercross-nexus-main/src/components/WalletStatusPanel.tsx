@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAccount, useBalance, useChainId, useSwitchChain } from "wagmi";
+import { useAccount, useBalance, useChainId, useDisconnect, useSwitchChain } from "wagmi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -20,6 +20,7 @@ interface ChainstackStatusSummary {
 export function WalletStatusPanel() {
   const { address, isConnected, isConnecting } = useAccount();
   const chainId = useChainId();
+  const { disconnect } = useDisconnect();
   const { switchChain, isPending: switching } = useSwitchChain();
   const { data: balance } = useBalance({ address, query: { enabled: Boolean(address) } });
 
@@ -127,6 +128,17 @@ export function WalletStatusPanel() {
           <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
             Chainstack RPC is unreachable. Signing is disabled until connectivity is restored.
           </div>
+        )}
+
+        {isConnected && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full border-white/20 text-white/70 hover:bg-white/10"
+            onClick={() => disconnect()}
+          >
+            Disconnect Wallet
+          </Button>
         )}
       </CardContent>
     </Card>

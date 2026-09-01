@@ -146,7 +146,7 @@ export default function DigitalAssetsPage() {
         });
         setAssets((current) => [normalizeAssets([created])[0], ...current]);
       } else {
-        await new Promise((resolve) => setTimeout(resolve, 1200));
+        throw new Error("On-chain asset issuance is not configured for the web application.");
       }
 
       setError(null);
@@ -156,7 +156,7 @@ export default function DigitalAssetsPage() {
       setTimeout(() => setIssued(false), 3000);
     } catch (err) {
       console.error("Error issuing asset:", err);
-      setError("Failed to issue asset.");
+      setError(err instanceof Error ? err.message : "Failed to issue asset.");
     } finally {
       setIssuing(false);
     }
