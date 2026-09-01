@@ -231,6 +231,8 @@ async function startServer() {
 
   app.use(helmet({
     contentSecurityPolicy: false, // the SPA sets its own CSP needs; avoid breaking Vite/dev assets
+    // Coinbase Smart Wallet requires window.opener access from its authorization popup.
+    crossOriginOpenerPolicy: false,
   }));
 
   const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:5173")
