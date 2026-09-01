@@ -1722,23 +1722,6 @@ async function startServer() {
     return cust.id as string;
   }
 
-  let cardVerificationPriceId: string | null = null;
-
-  // A small one-time charge collected at signup to verify the card is live before the
-  // trial starts. Stripe still requires this to be a real (non-refundable by default)
-  // charge, not a hold that auto-releases — there is no Checkout-native "authorize only"
-  // option for subscription mode.
-  async function stripeGetOrCreateCardVerificationPrice(): Promise<string> {
-    if (cardVerificationPriceId) return cardVerificationPriceId;
-    const price = await stripeRequest("POST", "/prices", {
-      currency: "usd",
-      unit_amount: "100",
-      "product_data[name]": "HyperCross Nexus — Card Verification",
-    });
-    cardVerificationPriceId = price.id as string;
-    return cardVerificationPriceId;
-  }
-
   async function stripeCreateCheckoutSession(
     plan: Exclude<PlanTier, "enterprise">,
     email: string,
@@ -1772,11 +1755,8 @@ async function startServer() {
     };
 
     if (trialDays > 0) {
-      // $1 card-verification charge up front, then the subscription itself starts on a
-      // trial and bills automatically at the full plan price once the trial ends.
-      const verificationPriceId = await stripeGetOrCreateCardVerificationPrice();
-      params["line_items[1][price]"] = verificationPriceId;
-      params["line_items[1][quantity]"] = "1";
+      // Card is collected by Checkout (mode: subscription always requires a payment
+      // method) but nothing is charged until the trial ends and Stripe auto-bills.
       params["subscription_data[trial_period_days]"] = String(trialDays);
       params["metadata[trial_granted]"] = "true";
     }

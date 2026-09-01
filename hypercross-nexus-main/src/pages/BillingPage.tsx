@@ -156,7 +156,7 @@ export default function BillingPage({ email, onUpgrade }: BillingPageProps) {
                   <p className="text-sm text-white/45 mt-0.5">{planDef.price}</p>
                   {subscription?.status === "trialing" && (
                     <p className="text-xs text-purple-300 mt-1">
-                      14-day free trial — a $1 card verification was charged today; full price bills automatically when the trial ends unless you cancel
+                      14-day free trial — card on file, no charge until it ends unless you cancel
                     </p>
                   )}
                 </div>
