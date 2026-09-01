@@ -419,31 +419,6 @@ async function startServer() {
 
   ensureDefaultLinkedAccounts();
 
-  const TRIAL_PLAN: Exclude<PlanTier, "enterprise"> = "pro";
-  const TRIAL_DAYS = 14;
-
-  // Grants every new email signup full-featured access for TRIAL_DAYS, no payment required.
-  function startTrialSubscription(email: string): void {
-    const custId = crypto.randomUUID();
-    queries.customers.upsert.run(custId, email, TRIAL_PLAN);
-    const customer = queries.customers.getByEmail.get(email) as any;
-
-    const now = new Date();
-    const trialEnd = new Date(now.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
-    queries.subscriptions.upsertByEmail.run(
-      crypto.randomUUID(),
-      customer.id,
-      email,
-      "trial",
-      null,
-      TRIAL_PLAN,
-      "trialing",
-      now.toISOString(),
-      trialEnd.toISOString(),
-      JSON.stringify({ source: "signup_trial" })
-    );
-  }
-
   app.post("/api/auth/signup", (req, res) => {
     try {
       const method = req.body?.method === "phone" ? "phone" : "email";
@@ -468,7 +443,6 @@ async function startServer() {
         queries.organization.create.run(orgId, orgName, id, JSON.stringify({}));
         queries.organizationMember.add.run(crypto.randomUUID(), id, orgId, "OWNER");
         queries.authUser.touchLogin.run(id);
-        startTrialSubscription(email);
 
         const sessionId = createSessionToken();
         queries.session.create.run(sessionId, id, orgId, "OWNER", getSessionExpiration().toISOString());
@@ -1748,6 +1722,23 @@ async function startServer() {
     return cust.id as string;
   }
 
+  let cardVerificationPriceId: string | null = null;
+
+  // A small one-time charge collected at signup to verify the card is live before the
+  // trial starts. Stripe still requires this to be a real (non-refundable by default)
+  // charge, not a hold that auto-releases — there is no Checkout-native "authorize only"
+  // option for subscription mode.
+  async function stripeGetOrCreateCardVerificationPrice(): Promise<string> {
+    if (cardVerificationPriceId) return cardVerificationPriceId;
+    const price = await stripeRequest("POST", "/prices", {
+      currency: "usd",
+      unit_amount: "100",
+      "product_data[name]": "HyperCross Nexus — Card Verification",
+    });
+    cardVerificationPriceId = price.id as string;
+    return cardVerificationPriceId;
+  }
+
   async function stripeCreateCheckoutSession(
     plan: Exclude<PlanTier, "enterprise">,
     email: string,
@@ -1768,19 +1759,42 @@ async function startServer() {
       planDef.stripePriceId = price.id as string;
     }
 
-    const session = await stripeRequest("POST", "/checkout/sessions", {
+    const params: Record<string, string> = {
       mode: "subscription",
       customer: stripeCustomerId,
       "line_items[0][price]": planDef.stripePriceId,
       "line_items[0][quantity]": "1",
       success_url: successUrl,
       cancel_url: cancelUrl,
-      ...(trialDays > 0 ? { "subscription_data[trial_period_days]": String(trialDays) } : {}),
       "subscription_data[metadata][plan_tier]": plan,
       "metadata[plan_tier]": plan,
       "metadata[email]": email,
-    });
+    };
+
+    if (trialDays > 0) {
+      // $1 card-verification charge up front, then the subscription itself starts on a
+      // trial and bills automatically at the full plan price once the trial ends.
+      const verificationPriceId = await stripeGetOrCreateCardVerificationPrice();
+      params["line_items[1][price]"] = verificationPriceId;
+      params["line_items[1][quantity]"] = "1";
+      params["subscription_data[trial_period_days]"] = String(trialDays);
+      params["metadata[trial_granted]"] = "true";
+    }
+
+    const session = await stripeRequest("POST", "/checkout/sessions", params);
     return { id: session.id as string, url: session.url as string };
+  }
+
+  async function stripeRetrieveSubscription(subscriptionId: string): Promise<any> {
+    return stripeRequest("GET", `/subscriptions/${subscriptionId}`);
+  }
+
+  // Maps Stripe's subscription lifecycle statuses onto the small set this app tracks locally.
+  function mapStripeSubscriptionStatus(stripeStatus: string): string {
+    if (stripeStatus === "trialing") return "trialing";
+    if (stripeStatus === "active") return "active";
+    if (stripeStatus === "past_due" || stripeStatus === "unpaid") return "past_due";
+    return "canceled";
   }
 
   async function stripeRetrieveSession(sessionId: string): Promise<any> {
@@ -2086,7 +2100,7 @@ async function startServer() {
       if (!email) return res.status(400).json({ error: "email is required" });
 
       const subscription = queries.subscriptions.getByEmail.get(email) as any;
-      if (!subscription || subscription.status !== "active") {
+      if (!subscription || !["active", "trialing"].includes(subscription.status)) {
         return res.status(404).json({ error: "No active subscription found." });
       }
 
@@ -2111,7 +2125,7 @@ async function startServer() {
   });
 
   // Stripe webhook handler
-  app.post("/api/webhooks/stripe", express.raw({ type: "application/json" }), (req, res) => {
+  app.post("/api/webhooks/stripe", express.raw({ type: "application/json" }), async (req, res) => {
     try {
       const payload = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? {}));
       const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -2137,11 +2151,27 @@ async function startServer() {
             queries.customers.upsert.run(custId, email, plan);
             customer = queries.customers.getByEmail.get(email) as any;
           }
-          const now = new Date().toISOString();
-          const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+          // Pull the real subscription status/period from Stripe rather than assuming
+          // "active" — a trial (with the $1 card-verification charge already collected)
+          // starts life as "trialing" and only becomes "active" once Stripe auto-bills.
+          let status = "active";
+          let periodStart = new Date().toISOString();
+          let periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+          if (session.subscription) {
+            try {
+              const sub = await stripeRetrieveSubscription(session.subscription as string);
+              status = mapStripeSubscriptionStatus(sub.status);
+              if (sub.current_period_start) periodStart = new Date(sub.current_period_start * 1000).toISOString();
+              if (sub.current_period_end) periodEnd = new Date(sub.current_period_end * 1000).toISOString();
+            } catch (err: any) {
+              console.warn("[webhooks/stripe] Failed to retrieve subscription for status:", err?.message);
+            }
+          }
+
           queries.subscriptions.upsertByEmail.run(
             crypto.randomUUID(), customer.id, email, "stripe",
-            session.subscription || session.id, plan, "active", now, periodEnd,
+            session.subscription || session.id, plan, status, periodStart, periodEnd,
             JSON.stringify({ webhookEvent: event.type })
           );
         }
@@ -2149,7 +2179,7 @@ async function startServer() {
 
       if (event.type === "customer.subscription.deleted" || event.type === "customer.subscription.updated") {
         const sub = event.data.object;
-        const status = sub.status === "active" ? "active" : "canceled";
+        const status = mapStripeSubscriptionStatus(sub.status);
         queries.subscriptions.updateStatus.run(status, sub.id);
       }
 
