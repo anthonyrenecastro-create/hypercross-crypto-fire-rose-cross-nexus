@@ -9,6 +9,12 @@ import { BlockchainProviderFactory } from "./server/blockchain/BlockchainProvide
 import { blockchainService } from "./server/blockchain/BlockchainService";
 import { WalletVerificationService } from "./server/wallet/WalletVerificationService";
 import { PortfolioService } from "./server/portfolio/PortfolioService";
+import { TransferService } from "./server/transactions/TransferService";
+import { TransactionService } from "./server/transactions/TransactionService";
+import { SwapService } from "./server/swap/SwapService";
+import { OnChainTradingService } from "./server/trading/OnChainTradingService";
+import { toErrorPayload } from "./server/blockchain/errors";
+import { getFeatureFlags, type FeatureFlags } from "./server/config/FeatureFlags";
 import {
   hashPassword,
   verifyPassword,
@@ -524,21 +530,34 @@ async function startServer() {
     }
   });
 
+  // GET /api/config/features - Resolved feature flags for the frontend (no secrets).
+  app.get("/api/config/features", (req, res) => {
+    res.json({ ok: true, features: getFeatureFlags() satisfies FeatureFlags });
+  });
+
   // Blockchain status endpoint (detailed blockchain information)
   app.get("/api/blockchain/status", async (req, res) => {
     try {
+      const startedAt = Date.now();
       const status = await blockchainService.getStatus();
+      const rpcLatencyMs = Date.now() - startedAt;
       const networkInfo = blockchainService.getNetworkInfo();
-      
+      const wss = blockchainService.getWebSocketStatus();
+      const allowMainnet = ["true", "1"].includes((process.env.ALLOW_MAINNET || "false").trim().toLowerCase());
+
       return res.json({
         provider: status.provider,
         network: status.network,
         chainId: status.chainId ?? null,
         connected: status.connected,
         rpcHealthy: status.rpcHealthy,
+        wssHealthy: wss.connected,
+        wssConfigured: wss.configured,
         live: status.live,
         blockNumber: status.blockNumber ?? null,
+        rpcLatencyMs,
         testnet: networkInfo?.testnet ?? false,
+        mainnetWritesAllowed: (networkInfo?.testnet ?? true) ? true : allowMainnet,
         explorerUrl: networkInfo?.explorerUrl ?? null,
         error: status.error ?? null,
         lastChecked: status.lastChecked ?? null,
@@ -550,9 +569,13 @@ async function startServer() {
         chainId: Number(process.env.CHAINSTACK_CHAIN_ID || 1),
         connected: false,
         rpcHealthy: false,
+        wssHealthy: false,
+        wssConfigured: Boolean(process.env.CHAINSTACK_WSS_URL),
         live: false,
         blockNumber: null,
+        rpcLatencyMs: null,
         testnet: true,
+        mainnetWritesAllowed: false,
         explorerUrl: null,
         error: error?.message ?? "Chainstack RPC is not configured.",
         lastChecked: new Date().toISOString(),
@@ -670,6 +693,30 @@ async function startServer() {
     }
   });
 
+  // GET /api/wallet/session - Resolve the current session cookie to a verified wallet
+  // Returns: { ok, address, expiresAt } | { ok: false, error }
+  app.get("/api/wallet/session", (req, res) => {
+    const token = req.cookies?.[getSessionCookieName()];
+    if (!token) {
+      return res.status(401).json({ ok: false, error: "WALLET_NOT_VERIFIED", message: "No active wallet session." });
+    }
+    const info = WalletVerificationService.getSessionInfo(token);
+    if (!info) {
+      return res.status(401).json({ ok: false, error: "WALLET_NOT_VERIFIED", message: "Session is invalid or expired." });
+    }
+    return res.json({ ok: true, address: info.address, expiresAt: info.expiresAt });
+  });
+
+  // DELETE /api/wallet/session - Revoke the current wallet session (sign out)
+  app.delete("/api/wallet/session", (req, res) => {
+    const token = req.cookies?.[getSessionCookieName()];
+    if (token) {
+      WalletVerificationService.revokeSession(token);
+    }
+    clearSessionCookie(res);
+    return res.json({ ok: true });
+  });
+
   // ── Portfolio Service Endpoints (Phase 7) ──
   // These endpoints provide real-time access to wallet holdings across multiple EVM chains
 
@@ -752,7 +799,7 @@ async function startServer() {
         });
       }
 
-      const balance = PortfolioService.getTokenBalance(
+      const balance = await PortfolioService.getTokenBalance(
         address,
         Number(chainId),
         String(symbol).toUpperCase()
@@ -774,6 +821,170 @@ async function startServer() {
         ok: false,
         error: error?.message || "Failed to fetch token balance",
       });
+    }
+  });
+
+  // ── Transaction Manager ──
+  // Persistent record of real on-chain transactions. Status only becomes CONFIRMED
+  // after a real transaction receipt is observed.
+
+  app.get("/api/transactions/:id", requireAuth, (req, res) => {
+    const record = TransactionService.getById(req.params.id);
+    if (!record) return res.status(404).json({ ok: false, error: "Transaction not found." });
+    return res.json({ ok: true, transaction: record });
+  });
+
+  app.get("/api/transactions", requireAuth, (req: AuthenticatedRequest, res) => {
+    const walletAddress = req.user?.walletAddress;
+    if (!walletAddress) return res.status(400).json({ ok: false, error: "WALLET_NOT_VERIFIED", message: "No verified wallet on this session." });
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit ?? 50)));
+    const transactions = TransactionService.listByWallet(walletAddress, limit);
+    return res.json({ ok: true, transactions });
+  });
+
+  // POST /api/transactions/:id/submitted - Record the REAL hash the wallet returned after broadcast.
+  app.post("/api/transactions/:id/submitted", requireAuth, (req, res) => {
+    try {
+      const { transactionHash } = req.body;
+      if (!transactionHash || typeof transactionHash !== "string") {
+        return res.status(400).json({ ok: false, error: "transactionHash is required." });
+      }
+      TransactionService.recordSubmitted(req.params.id, transactionHash);
+      return res.json({ ok: true, transaction: TransactionService.getById(req.params.id) });
+    } catch (error: any) {
+      const payload = toErrorPayload(error);
+      return res.status(400).json({ ok: false, ...payload });
+    }
+  });
+
+  // POST /api/transactions/:id/cancelled - Wallet rejected the signature (not a backend failure).
+  app.post("/api/transactions/:id/cancelled", requireAuth, (req, res) => {
+    TransactionService.markWalletRejected(req.params.id);
+    return res.json({ ok: true, transaction: TransactionService.getById(req.params.id) });
+  });
+
+  // GET /api/transactions/:id/poll - Poll Chainstack for a receipt and update status.
+  app.get("/api/transactions/:id/poll", requireAuth, async (req, res) => {
+    try {
+      const status = await TransactionService.pollReceipt(req.params.id);
+      return res.json({ ok: true, status, transaction: TransactionService.getById(req.params.id) });
+    } catch (error: any) {
+      const payload = toErrorPayload(error);
+      return res.status(400).json({ ok: false, ...payload });
+    }
+  });
+
+  // ── Native / ERC-20 Transfers ──
+  // These endpoints only PREPARE an unsigned transaction (validate, estimate gas,
+  // enforce mainnet policy). The user's connected wallet signs and broadcasts it;
+  // the resulting real hash is then reported back via /api/transactions/:id/submitted.
+
+  app.post("/api/transfers/native/prepare", requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const walletAddress = req.user?.walletAddress;
+      if (!walletAddress) return res.status(400).json({ ok: false, code: "WALLET_NOT_VERIFIED", error: "No verified wallet on this session." });
+      const { to, amount } = req.body;
+      const prepared = await TransferService.prepareNativeTransfer(req.user?.id ?? null, walletAddress, String(to), String(amount));
+      return res.status(201).json({ ok: true, ...prepared });
+    } catch (error: any) {
+      const payload = toErrorPayload(error);
+      return res.status(400).json({ ok: false, ...payload });
+    }
+  });
+
+  app.post("/api/transfers/erc20/prepare", requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const walletAddress = req.user?.walletAddress;
+      if (!walletAddress) return res.status(400).json({ ok: false, code: "WALLET_NOT_VERIFIED", error: "No verified wallet on this session." });
+      const { token, to, amount } = req.body;
+      const prepared = await TransferService.prepareErc20Transfer(req.user?.id ?? null, walletAddress, String(token), String(to), String(amount));
+      return res.status(201).json({ ok: true, ...prepared });
+    } catch (error: any) {
+      const payload = toErrorPayload(error);
+      return res.status(400).json({ ok: false, ...payload });
+    }
+  });
+
+  // ── Swap (DEX) ──
+  // Real quotes/allowance/approval via the 0x Swap API. Requires ZEROX_API_KEY.
+
+  app.post("/api/swap/quote", requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const walletAddress = req.user?.walletAddress;
+      if (!walletAddress) return res.status(400).json({ ok: false, code: "WALLET_NOT_VERIFIED", error: "No verified wallet on this session." });
+      const { tokenIn, tokenOut, amountIn, slippageBps } = req.body;
+      const quote = await SwapService.requestQuote({
+        tokenIn: String(tokenIn),
+        tokenOut: String(tokenOut),
+        amountIn: String(amountIn),
+        takerAddress: walletAddress,
+        slippageBps: Number(slippageBps ?? 50),
+      });
+      return res.json({ ok: true, quote });
+    } catch (error: any) {
+      const payload = toErrorPayload(error);
+      return res.status(400).json({ ok: false, ...payload });
+    }
+  });
+
+  app.get("/api/swap/allowance", requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const walletAddress = req.user?.walletAddress;
+      if (!walletAddress) return res.status(400).json({ ok: false, code: "WALLET_NOT_VERIFIED", error: "No verified wallet on this session." });
+      const { tokenAddress, spender } = req.query;
+      const result = await SwapService.checkAllowance(String(tokenAddress), walletAddress, String(spender));
+      return res.json({ ok: true, ...result });
+    } catch (error: any) {
+      const payload = toErrorPayload(error);
+      return res.status(400).json({ ok: false, ...payload });
+    }
+  });
+
+  app.post("/api/swap/approve/prepare", requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const walletAddress = req.user?.walletAddress;
+      if (!walletAddress) return res.status(400).json({ ok: false, code: "WALLET_NOT_VERIFIED", error: "No verified wallet on this session." });
+      const { tokenAddress, spender } = req.body;
+      const prepared = await SwapService.prepareApproval(req.user?.id ?? null, walletAddress, String(tokenAddress), String(spender));
+      return res.status(201).json({ ok: true, ...prepared });
+    } catch (error: any) {
+      const payload = toErrorPayload(error);
+      return res.status(400).json({ ok: false, ...payload });
+    }
+  });
+
+  // Requires explicit user confirmation on the frontend — never auto-executed after approval.
+  app.post("/api/swap/execute/prepare", requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const walletAddress = req.user?.walletAddress;
+      if (!walletAddress) return res.status(400).json({ ok: false, code: "WALLET_NOT_VERIFIED", error: "No verified wallet on this session." });
+      const { tokenIn, tokenOut } = req.body;
+      const prepared = await SwapService.prepareSwap(req.user?.id ?? null, walletAddress, String(tokenIn), String(tokenOut));
+      return res.status(201).json({ ok: true, ...prepared });
+    } catch (error: any) {
+      const payload = toErrorPayload(error);
+      return res.status(400).json({ ok: false, ...payload });
+    }
+  });
+
+  // ── On-chain Trading (BUY/SELL implemented as swaps) ──
+  app.post("/api/trading/quote", requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const walletAddress = req.user?.walletAddress;
+      if (!walletAddress) return res.status(400).json({ ok: false, code: "WALLET_NOT_VERIFIED", error: "No verified wallet on this session." });
+      const { side, base, quote, amount, slippageBps } = req.body;
+      const result = await OnChainTradingService.quoteTrade({
+        side: side === "SELL" ? "SELL" : "BUY",
+        base: String(base),
+        quote: String(quote),
+        amount: String(amount),
+        takerAddress: walletAddress,
+        slippageBps: Number(slippageBps ?? 50),
+      });
+      return res.json({ ok: true, mode: "onchain", realExecution: true, quote: result });
+    } catch (error: any) {
+      const payload = toErrorPayload(error);
+      return res.status(400).json({ ok: false, ...payload });
     }
   });
 
@@ -1096,7 +1307,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/live/linked-accounts", requireAuth, requirePermission("manage_assets"), (req, res) => {
+  app.get("/api/paper/accounts", requireAuth, requirePermission("manage_assets"), (req, res) => {
     try {
       const accounts = (queries.linkedAccounts.list.all() as any[]).map((row) => {
         const balances = parseBalances(row.balances);
@@ -1115,24 +1326,27 @@ async function startServer() {
         };
       });
 
-      res.json(accounts);
+      res.json({ mode: "paper", realExecution: false, accounts });
     } catch (err: any) {
       res.status(500).json({ error: err?.message ?? "Failed to fetch linked accounts" });
     }
   });
 
-  app.get("/api/live/trades", requireAuth, requirePermission("manage_assets"), (req, res) => {
+  app.get("/api/paper/trades", requireAuth, requirePermission("manage_assets"), (req, res) => {
     try {
       const rawLimit = Number(req.query.limit ?? 20);
       const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 20;
       const trades = queries.trades.listRecent.all(limit);
-      res.json(trades);
+      res.json({ mode: "paper", realExecution: false, trades });
     } catch (err: any) {
       res.status(500).json({ error: err?.message ?? "Failed to fetch trades" });
     }
   });
 
-  app.post("/api/live/execute-trade", requireAuth, requirePermission("execute_permitted_trading_operations"), (req, res) => {
+  // PAPER TRADING ONLY — mutates a local demo ledger. No blockchain transaction is
+  // submitted. Every response is explicitly labeled { mode: "paper", realExecution: false }.
+  // For real on-chain trading, see /api/trading/quote (OnChainTradingService + SwapService).
+  app.post("/api/paper/trades/execute", requireAuth, requirePermission("execute_permitted_trading_operations"), (req, res) => {
     try {
       const accountId = String(req.body?.accountId ?? "").trim();
       const instrument = String(req.body?.instrument ?? "").trim().toUpperCase();
@@ -1185,6 +1399,8 @@ async function startServer() {
       const updated = queries.linkedAccounts.getById.get(accountId) as any;
       res.status(201).json({
         ok: true,
+        mode: "paper",
+        realExecution: false,
         trade: {
           id: tradeId,
           accountId,
@@ -1331,6 +1547,9 @@ async function startServer() {
   });
 
   app.get("/api/live/rwa", async (req, res) => {
+    if (!getFeatureFlags().rwa) {
+      return res.status(404).json({ error: "FEATURE_DISABLED", message: "RWA module is disabled (FEATURE_RWA=false)." });
+    }
     try {
       const { dataSourceManager } = await import("./src/services/dataSourceManager");
       const channel = (req.query.channel as string) ?? "rwa-channel";
@@ -1342,6 +1561,9 @@ async function startServer() {
   });
 
   app.get("/api/live/nft", async (req, res) => {
+    if (!getFeatureFlags().nft) {
+      return res.status(404).json({ error: "FEATURE_DISABLED", message: "NFT module is disabled (FEATURE_NFT=false)." });
+    }
     try {
       const { dataSourceManager } = await import("./src/services/dataSourceManager");
       const channel = (req.query.channel as string) ?? "nft-channel";
@@ -1353,6 +1575,9 @@ async function startServer() {
   });
 
   app.get("/api/live/sports-events", async (req, res) => {
+    if (!getFeatureFlags().sports) {
+      return res.status(404).json({ error: "FEATURE_DISABLED", message: "Sports module is disabled (FEATURE_SPORTS=false)." });
+    }
     try {
       const { dataSourceManager } = await import("./src/services/dataSourceManager");
       const events = await dataSourceManager.getLiveSportsEvents();
@@ -1363,6 +1588,9 @@ async function startServer() {
   });
 
   app.get("/api/live/mining-stats", async (req, res) => {
+    if (!getFeatureFlags().mining) {
+      return res.status(404).json({ error: "FEATURE_DISABLED", message: "Mining module is disabled (FEATURE_MINING=false)." });
+    }
     try {
       const { dataSourceManager } = await import("./src/services/dataSourceManager");
       const stats = await dataSourceManager.getMiningPoolStats();
@@ -1871,6 +2099,13 @@ async function startServer() {
     console.error("Failed to initialize blockchain service:", error);
     process.exit(1);
   }
+
+  // Background poller: reconciles SUBMITTED/PENDING transactions against real receipts.
+  setInterval(() => {
+    TransactionService.pollAllPending().catch((err) => {
+      console.error("Transaction poll cycle failed:", err?.message ?? err);
+    });
+  }, 15000);
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

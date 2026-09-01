@@ -24,7 +24,7 @@ export default function TokenFundraisingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch live fundraising campaigns from Fabric
+  // Placeholder: real fundraising data source not yet integrated
   useEffect(() => {
     const fetchCampaigns = async () => {
       try {
@@ -33,7 +33,7 @@ export default function TokenFundraisingPage() {
         if (!response.ok) throw new Error("Failed to fetch campaigns");
         const data = await response.json();
         
-        // Transform Fabric asset data into campaign format
+        // Transform data into campaign format
         const campaignData = Array.isArray(data) ? data.map((item: any, idx: number) => ({
           name: item.name || `Campaign ${idx + 1}`,
           token: item.symbol || "TBD",
@@ -76,7 +76,7 @@ export default function TokenFundraisingPage() {
             Token Fundraising Module
           </h2>
           <p className="text-white/50 mt-1 text-sm">
-            Run compliant token sales (ICO, IDO, private rounds) on your Kaleido Fabric network with automatic allocation tracking.
+            Run compliant token sales (ICO, IDO, private rounds) with automatic allocation tracking. This module is a simulated demo.
           </p>
         </div>
         <Button onClick={() => setShowForm(s => !s)} className="bg-gradient-to-r from-green-600 to-teal-600 hover:opacity-90 text-white border-0 shadow-[0_0_15px_rgba(34,197,94,0.20)]">
@@ -114,7 +114,7 @@ export default function TokenFundraisingPage() {
         <Card className="glass-panel border border-green-500/20 border-t-2 border-t-green-500/60">
           <CardHeader>
             <CardTitle className="text-white text-lg">Create Fundraising Campaign</CardTitle>
-            <CardDescription className="text-white/50">Configure a new token sale. All investments are recorded on-chain via the fundraising chaincode.</CardDescription>
+            <CardDescription className="text-white/50">Configure a new token sale. This module is a simulated demo — no real investments are recorded on-chain.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -143,7 +143,7 @@ export default function TokenFundraisingPage() {
                 <Input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} className="bg-black/50 border-white/10 text-white focus-visible:ring-green-500" />
               </div>
               <div className="col-span-2 space-y-2">
-                <Label className="text-white/70">Fabric Channel</Label>
+                <Label className="text-white/70">Campaign Category</Label>
                 <Input value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))} placeholder="fundraising-channel" className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-green-500" />
               </div>
             </div>

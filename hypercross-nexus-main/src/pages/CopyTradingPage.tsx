@@ -51,7 +51,7 @@ export default function CopyTradingPage() {
           Copy Trading Module
         </h2>
         <p className="text-white/50 mt-1 text-sm">
-          Automatically replicate trades from verified top performers. All copy actions are recorded on the Kaleido Fabric network for full transparency.
+          Automatically replicate trades from verified top performers. This module is a simulated demo — no real trades are executed.
         </p>
       </div>
 
@@ -130,7 +130,7 @@ export default function CopyTradingPage() {
                     <input type="range" min={1} max={50} value={maxRisk} onChange={e => setMaxRisk(e.target.value)} className="w-full accent-teal-500" />
                   </div>
                   <Button disabled={!allocation} className="w-full bg-teal-600 hover:bg-teal-700 text-white border-0 disabled:opacity-40">
-                    <Copy className="h-4 w-4 mr-2" /> Start Copying on Fabric
+                    <Copy className="h-4 w-4 mr-2" /> Start Copying (Demo)
                   </Button>
                 </CardContent>
               </Card>

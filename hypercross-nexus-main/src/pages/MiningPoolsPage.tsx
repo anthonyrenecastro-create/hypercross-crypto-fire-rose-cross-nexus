@@ -19,7 +19,7 @@ interface Pool {
 const FALLBACK_POOLS = [
   { name: "Nexus Mining Pool Alpha", algo: "SHA-256", hashrate: "42.8 PH/s", workers: 184, fee: "1.5%", earnings24h: "0.0042 BTC", status: "Active" },
   { name: "HyperCross ETH Pool", algo: "Ethash", hashrate: "820 GH/s", workers: 67, fee: "1.0%", earnings24h: "0.91 ETH", status: "Active" },
-  { name: "Kaleido Testnet Pool", algo: "Custom PoW", hashrate: "12 TH/s", workers: 12, fee: "0%", earnings24h: "—", status: "Test" },
+  { name: "Demo Testnet Pool", algo: "Custom PoW", hashrate: "12 TH/s", workers: 12, fee: "0%", earnings24h: "—", status: "Test" },
 ];
 
 export default function MiningPoolsPage() {
@@ -77,7 +77,7 @@ export default function MiningPoolsPage() {
             Mining Pools
           </h2>
           <p className="text-white/50 mt-1 text-sm">
-            Connect mining infrastructure to Kaleido-managed pools. Earnings and worker stats are recorded on-chain for transparent reward distribution.
+            Connect mining infrastructure to monitored pools. This module is a simulated demo. Earnings and worker stats shown are illustrative only.
           </p>
         </div>
         <Button onClick={() => setShowJoin(s => !s)} className="bg-gray-700 hover:bg-gray-600 text-white border-0">

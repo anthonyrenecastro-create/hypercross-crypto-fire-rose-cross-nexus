@@ -18,6 +18,7 @@ export interface AuthenticatedRequest extends Request {
     id: string;
     email?: string | null;
     phone?: string | null;
+    walletAddress?: string | null;
     role: AuthRole;
     organizationId?: string | null;
   };
@@ -100,6 +101,7 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
     id: user.id,
     email: user.email,
     phone: null,
+    walletAddress: user.walletAddress ?? null,
     role: effectiveRole,
     organizationId: session.orgId ?? orgMembership?.orgId ?? null,
   };

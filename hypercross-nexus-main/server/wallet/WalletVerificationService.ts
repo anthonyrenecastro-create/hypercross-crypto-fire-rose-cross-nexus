@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { ethers } from "ethers";
 import { queries } from "../../src/db";
 import { createSessionToken, getSessionExpiration } from "../auth";
+import { blockchainService } from "../blockchain/BlockchainService";
 
 /**
  * Phase 6: Wallet Signature Verification Service
@@ -52,10 +53,13 @@ function generateNonce(): string {
 
 /**
  * Formats a message for signing (EIP-191)
- * This is the standard message format that wallet apps will sign
+ * This is the standard message format that wallet apps will sign.
+ * Clearly identifies Hypercross Nexus and the chain context to deter phishing/replay across apps or chains.
  */
 function formatMessageForSigning(nonce: string, address: string): string {
-  return `Sign this message to verify ownership of wallet ${address}\n\nNonce: ${nonce}`;
+  const chainId = blockchainService.getNetworkInfo()?.chainId;
+  const chainLine = chainId ? `\nChain ID: ${chainId}` : "";
+  return `Hypercross Nexus wants you to sign in with your wallet.\n\nAddress: ${address}${chainLine}\nNonce: ${nonce}\n\nThis signature will not trigger a blockchain transaction or cost any gas.`;
 }
 
 /**
@@ -178,11 +182,20 @@ export function verifySignature(req: VerifyRequest): VerifyResponse {
       };
     }
 
-    // Verification succeeded! Create session
+    // Verification succeeded! Find or create the user record for this wallet,
+    // then create a REAL session row so requireAuth() recognizes this token.
+    let user = queries.user.getByWallet.get(normalizedAddress) as any;
+    if (!user) {
+      const userId = crypto.randomUUID();
+      queries.user.create.run(userId, null, normalizedAddress, null);
+      user = queries.user.getById.get(userId) as any;
+    }
+
     const sessionToken = createSessionToken();
     const sessionExpiration = getSessionExpiration();
+    queries.session.create.run(sessionToken, user.id, null, "VIEWER", sessionExpiration.toISOString());
 
-    // Mark nonce as verified in database
+    // Mark nonce as verified (and consumed — see verify query) in the wallet-verification record
     queries.walletVerification.verify.run(
       req.signature,
       sessionToken,
@@ -237,6 +250,34 @@ export function cleanupExpiredNonces(): number {
   return result?.changes || 0;
 }
 
+/**
+ * Resolves the wallet session for GET /api/wallet/session — looks up the real
+ * `sessions` row (not just the walletVerification bookkeeping row) so the result
+ * reflects whether the caller's session token is actually authenticated.
+ */
+export function getSessionInfo(sessionToken: string): { address: string; userId: string; expiresAt: string } | null {
+  const session = queries.session.getById.get(sessionToken) as any;
+  if (!session) return null;
+  const user = queries.user.getById.get(session.userId) as any;
+  if (!user?.walletAddress) return null;
+  return {
+    address: user.walletAddress,
+    userId: user.id,
+    expiresAt: session.expiresAt,
+  };
+}
+
+/**
+ * Revokes a wallet session (DELETE /api/wallet/session) — deletes the real
+ * session row so the token can never be used again.
+ */
+export function revokeSession(sessionToken: string): boolean {
+  const session = queries.session.getById.get(sessionToken) as any;
+  if (!session) return false;
+  queries.session.deleteById.run(sessionToken);
+  return true;
+}
+
 export const WalletVerificationService = {
   createNonce,
   getNonce,
@@ -244,6 +285,8 @@ export const WalletVerificationService = {
   getWalletInfo,
   cleanupExpiredNonces,
   formatMessageForSigning,
+  getSessionInfo,
+  revokeSession,
 };
 
 export default WalletVerificationService;

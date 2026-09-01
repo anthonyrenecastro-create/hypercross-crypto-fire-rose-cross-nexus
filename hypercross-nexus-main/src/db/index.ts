@@ -131,7 +131,47 @@ export function initDb() {
     )
   `);
 
-  // Digital Assets (live state from Fabric)
+  // Real on-chain transactions (transfers, approvals, swaps). Status only becomes
+  // CONFIRMED after a real transaction receipt is observed — never on local state alone.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS transactions (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      walletAddress TEXT NOT NULL,
+      chainId INTEGER NOT NULL,
+      network TEXT NOT NULL,
+      transactionHash TEXT,
+      operationType TEXT NOT NULL,
+      contractAddress TEXT,
+      tokenAddress TEXT,
+      tokenSymbol TEXT,
+      amount TEXT,
+      value TEXT,
+      gasEstimate TEXT,
+      status TEXT NOT NULL DEFAULT 'CREATED',
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      submittedAt DATETIME,
+      confirmedAt DATETIME,
+      blockNumber INTEGER,
+      failureReason TEXT,
+      explorerUrl TEXT,
+      UNIQUE(transactionHash, chainId)
+    )
+  `);
+
+  // Append-only audit trail for wallet/transaction/swap lifecycle events.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS auditLog (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      walletAddress TEXT,
+      action TEXT NOT NULL,
+      metadata JSON,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Digital Assets (legacy schema; not used by the active Chainstack MVP runtime)
   db.exec(`
     CREATE TABLE IF NOT EXISTS assets (
       id TEXT PRIMARY KEY,
@@ -543,9 +583,10 @@ export const queries = {
         createdAt = CURRENT_TIMESTAMP
     `),
     getNonce: db.prepare(`SELECT * FROM walletVerification WHERE address = ? AND expiresAt > CURRENT_TIMESTAMP`),
+    // Consumes the nonce on successful verification (expiresAt set to now) so it can never be replayed.
     verify: db.prepare(`
       UPDATE walletVerification
-      SET verifiedAt = CURRENT_TIMESTAMP, signature = ?, sessionId = ?
+      SET verifiedAt = CURRENT_TIMESTAMP, signature = ?, sessionId = ?, expiresAt = CURRENT_TIMESTAMP
       WHERE address = ? AND nonce = ?
     `),
     getByAddress: db.prepare(`SELECT * FROM walletVerification WHERE address = ?`),
@@ -578,6 +619,50 @@ export const queries = {
     `),
     deleteByWallet: db.prepare(`DELETE FROM userHoldings WHERE walletAddress = ?`),
     deleteOlderThan: db.prepare(`DELETE FROM userHoldings WHERE fetchedAt < ?`),
+  },
+
+  transactions: {
+    create: db.prepare(`
+      INSERT INTO transactions
+        (id, userId, walletAddress, chainId, network, operationType, contractAddress, tokenAddress, tokenSymbol, amount, value, gasEstimate, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREATED')
+    `),
+    setSubmitted: db.prepare(`
+      UPDATE transactions
+      SET transactionHash = ?, status = 'SUBMITTED', submittedAt = CURRENT_TIMESTAMP, explorerUrl = ?
+      WHERE id = ?
+    `),
+    setStatus: db.prepare(`
+      UPDATE transactions SET status = ? WHERE id = ?
+    `),
+    setConfirmed: db.prepare(`
+      UPDATE transactions
+      SET status = 'CONFIRMED', confirmedAt = CURRENT_TIMESTAMP, blockNumber = ?
+      WHERE id = ?
+    `),
+    setFailed: db.prepare(`
+      UPDATE transactions
+      SET status = 'FAILED', confirmedAt = CURRENT_TIMESTAMP, blockNumber = ?, failureReason = ?
+      WHERE id = ?
+    `),
+    getById: db.prepare(`SELECT * FROM transactions WHERE id = ?`),
+    getByHash: db.prepare(`SELECT * FROM transactions WHERE transactionHash = ? AND chainId = ?`),
+    getByWallet: db.prepare(`
+      SELECT * FROM transactions WHERE walletAddress = ? ORDER BY createdAt DESC LIMIT ?
+    `),
+    getPending: db.prepare(`
+      SELECT * FROM transactions WHERE status IN ('SUBMITTED', 'PENDING') AND transactionHash IS NOT NULL
+    `),
+  },
+
+  auditLog: {
+    record: db.prepare(`
+      INSERT INTO auditLog (id, userId, walletAddress, action, metadata)
+      VALUES (?, ?, ?, ?, json(?))
+    `),
+    listByWallet: db.prepare(`
+      SELECT * FROM auditLog WHERE walletAddress = ? ORDER BY createdAt DESC LIMIT ?
+    `),
   },
 };
 

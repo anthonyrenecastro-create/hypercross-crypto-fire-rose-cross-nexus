@@ -9,9 +9,12 @@
 import { BlockchainProviderFactory } from "./BlockchainProviderFactory";
 import { EnvironmentValidator } from "./EnvironmentValidator";
 import { NetworkRegistry } from "./NetworkRegistry";
+import { validateTokenRegistry } from "./TokenRegistry";
+import { isAddress } from "ethers";
 import {
   BlockchainConfigurationError,
   BlockchainConnectionError,
+  MainnetExecutionDisabledError,
 } from "./errors";
 import type { BlockchainProvider, ProviderConnectionStatus } from "./types";
 
@@ -45,6 +48,7 @@ export class BlockchainService {
     // Validate environment
     EnvironmentValidator.throwIfInvalid();
     EnvironmentValidator.logStartupInfo();
+    validateTokenRegistry(isAddress);
 
     // Create provider from environment
     try {
@@ -100,6 +104,12 @@ export class BlockchainService {
     }
   }
 
+  /** WSS status is tracked separately from HTTPS health — a WSS failure never affects HTTPS. */
+  getWebSocketStatus(): { configured: boolean; connected: boolean; error: string | null } {
+    if (!this.provider) return { configured: false, connected: false, error: "Not initialized" };
+    return this.provider.getWebSocketStatus();
+  }
+
   /**
    * Get current block number
    */
@@ -137,6 +147,58 @@ export class BlockchainService {
     }
 
     return this.provider.getTransaction(txHash);
+  }
+
+  /**
+   * Get a transaction receipt (used to determine CONFIRMED/FAILED status).
+   * Returns null while still pending.
+   */
+  async getTransactionReceipt(txHash: string): Promise<any> {
+    if (!this.provider) throw new BlockchainConnectionError("Blockchain service not initialized");
+    return this.provider.query({ rawRpcMethod: "eth_getTransactionReceipt", rawRpcParams: [txHash] });
+  }
+
+  /**
+   * Estimates gas for a prepared (unsigned) transaction. Used to show the user
+   * an estimated cost before they sign — never used to sign or broadcast.
+   */
+  async estimateGas(request: { from?: string; to: string; data?: string; value?: string }): Promise<string> {
+    if (!this.provider) throw new BlockchainConnectionError("Blockchain service not initialized");
+    return this.provider.estimateGas(request);
+  }
+
+  async getFeeData() {
+    if (!this.provider) throw new BlockchainConnectionError("Blockchain service not initialized");
+    return this.provider.getFeeData();
+  }
+
+  /**
+   * Read-only contract call routed through the enforced Chainstack provider.
+   * The frontend may never supply the ABI/method directly — callers must pass
+   * an ABI sourced from the repo's registries (ERC20_ABI, router ABIs, etc.).
+   */
+  async readContract(contractAddress: string, abi: any[], method: string, args: unknown[] = []): Promise<any> {
+    if (!this.provider) throw new BlockchainConnectionError("Blockchain service not initialized");
+    return this.provider.query({ contractAddress, abi, method, args });
+  }
+
+  /**
+   * Whether the currently configured network is a mainnet (per NetworkRegistry).
+   */
+  isMainnet(): boolean {
+    return this.getNetworkInfo()?.testnet === false;
+  }
+
+  /**
+   * Throws MAINNET_EXECUTION_DISABLED unless ALLOW_MAINNET=true when the active
+   * network is mainnet. Reads are never restricted; only state-changing operations
+   * (transfers, approvals, swaps, contract writes) should call this guard.
+   */
+  assertMainnetWritesAllowed(env: NodeJS.ProcessEnv = process.env): void {
+    const allowMainnet = ["true", "1"].includes((env.ALLOW_MAINNET || "false").trim().toLowerCase());
+    if (this.isMainnet() && !allowMainnet) {
+      throw new MainnetExecutionDisabledError();
+    }
   }
 
   /**

@@ -32,7 +32,7 @@ export default function TokenLaunchpadPage() {
           Token Launchpad Infrastructure
         </h2>
         <p className="text-white/50 mt-1 text-sm">
-          Launch new tokens with transparent vesting schedules, whitelist management, and on-chain TGE mechanics via Kaleido Fabric.
+          Launch new tokens with transparent vesting schedules, whitelist management, and on-chain TGE mechanics. This module is a simulated demo.
         </p>
       </div>
 
@@ -89,7 +89,7 @@ export default function TokenLaunchpadPage() {
             {step === 2 && (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label className="text-white/70">Fabric Channel</Label>
+                  <Label className="text-white/70">Launch Category</Label>
                   <Input value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))} placeholder="launchpad-channel" className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-orange-500" />
                 </div>
                 {[

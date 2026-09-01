@@ -70,7 +70,7 @@ export default function SportsTradingPage() {
           Sports Trading Engine
         </h2>
         <p className="text-white/50 mt-1 text-sm">
-          Peer-to-peer sports prediction markets with on-chain settlement via Kaleido Fabric. Real-time odds, leveraged positions, and instant payouts.
+          Peer-to-peer sports prediction markets. This module is a simulated demo — no real settlement occurs.
         </p>
       </div>
 
@@ -145,7 +145,7 @@ export default function SportsTradingPage() {
                     <p className="text-yellow-400 font-bold text-lg">{payout} ETH</p>
                   </div>
                   <Button disabled={!pick || !stake} className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-semibold border-0 disabled:opacity-40">
-                    Place Trade on Fabric
+                    Place Trade (Demo)
                   </Button>
                 </>
               ) : (

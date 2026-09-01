@@ -103,7 +103,7 @@ export const ETHEREUM_SEPOLIA_TOKENS: Record<string, TokenConfig> = {
     coingeckoId: "dai",
   },
   WETH: {
-    address: "0xfFf9976782d46CC05630D07AE6142967F7D73Acc",
+    address: "0xffF9976782d46cc05630D07aE6142967F7d73AcC",
     chainId: 11155111,
     network: "ethereum-sepolia",
     symbol: "WETH",
@@ -166,7 +166,7 @@ export const BASE_SEPOLIA_TOKENS: Record<string, TokenConfig> = {
  */
 export const ARBITRUM_MAINNET_TOKENS: Record<string, TokenConfig> = {
   USDC: {
-    address: "0xAF88d065e77c8cC2239327C5EDb3A432268e5831",
+    address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
     chainId: 42161,
     network: "arbitrum",
     symbol: "USDC",
@@ -174,17 +174,11 @@ export const ARBITRUM_MAINNET_TOKENS: Record<string, TokenConfig> = {
     decimals: 6,
     coingeckoId: "usd-coin",
   },
-  DAI: {
-    address: "0xDA10009754f1DF034D68f38e7b856ee21765f24CB",
-    chainId: 42161,
-    network: "arbitrum",
-    symbol: "DAI",
-    name: "Dai Stablecoin",
-    decimals: 18,
-    coingeckoId: "dai",
-  },
+  // DAI intentionally omitted: the previously configured address failed EIP-55
+  // checksum/length validation (server/blockchain/TokenRegistry.validateTokenRegistry).
+  // Re-add only with a verified canonical Arbitrum One DAI contract address.
   WETH: {
-    address: "0x82aF49447efb812a79C5005699FA193953a36B9d",
+    address: "0x82AF49447efb812a79c5005699Fa193953A36b9d",
     chainId: 42161,
     network: "arbitrum",
     symbol: "WETH",
@@ -199,7 +193,7 @@ export const ARBITRUM_MAINNET_TOKENS: Record<string, TokenConfig> = {
  */
 export const ARBITRUM_SEPOLIA_TOKENS: Record<string, TokenConfig> = {
   USDC: {
-    address: "0x75faf014F0026145105547Ac005c1D0Aff1060Fe",
+    address: "0x75faF014f0026145105547AC005C1d0afF1060FE",
     chainId: 421614,
     network: "arbitrum-sepolia",
     symbol: "USDC",
@@ -208,7 +202,7 @@ export const ARBITRUM_SEPOLIA_TOKENS: Record<string, TokenConfig> = {
     coingeckoId: "usd-coin",
   },
   WETH: {
-    address: "0xEd1D1b31E7C1Dc67ee57D45e3e3BeFF8342d16e7",
+    address: "0xEd1D1B31e7c1Dc67Ee57d45e3e3bEFf8342D16E7",
     chainId: 421614,
     network: "arbitrum-sepolia",
     symbol: "WETH",
@@ -277,6 +271,30 @@ export function getAllTokens(): TokenConfig[] {
   return allTokens;
 }
 
+/**
+ * Validates every configured token address at startup (checksum + shape).
+ * Throws with a clear list of offending entries so misconfiguration fails fast.
+ */
+export function validateTokenRegistry(isAddress: (value: string) => boolean): void {
+  const problems: string[] = [];
+  for (const [chainId, tokens] of Object.entries(TOKEN_REGISTRY)) {
+    for (const [symbol, token] of Object.entries(tokens)) {
+      if (!isAddress(token.address)) {
+        problems.push(`chainId ${chainId} token ${symbol}: invalid address "${token.address}"`);
+      }
+      if (!Number.isInteger(token.decimals) || token.decimals < 0 || token.decimals > 36) {
+        problems.push(`chainId ${chainId} token ${symbol}: invalid decimals "${token.decimals}"`);
+      }
+      if (Number(chainId) !== token.chainId) {
+        problems.push(`chainId ${chainId} token ${symbol}: chainId mismatch (entry says ${token.chainId})`);
+      }
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(`Token registry validation failed:\n${problems.map((p) => `  • ${p}`).join("\n")}`);
+  }
+}
+
 export default {
   NATIVE_ETH,
   TOKEN_REGISTRY,
@@ -284,4 +302,5 @@ export default {
   getTokensByChain,
   getTokenByAddress,
   getAllTokens,
+  validateTokenRegistry,
 };

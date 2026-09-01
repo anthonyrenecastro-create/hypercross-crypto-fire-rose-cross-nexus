@@ -121,7 +121,7 @@ export default function DerivativesPage() {
           Derivatives
         </h2>
         <p className="text-white/50 mt-1 text-sm">
-          Trade perpetual futures and options with on-chain settlement and margin management via the Kaleido Fabric derivatives chaincode.
+          Trade perpetual futures and options with on-chain settlement and margin management. This module is a simulated demo — no leveraged positions are opened on-chain.
         </p>
       </div>
 

@@ -16,10 +16,11 @@
  * 4. Aggregate portfolio across chains
  */
 
-import { Contract, ethers } from "ethers";
+import { ethers } from "ethers";
 import { blockchainService } from "../blockchain/BlockchainService";
 import { getTokenConfig, getTokensByChain, TokenConfig } from "../blockchain/TokenRegistry";
 import { ERC20_ABI } from "../blockchain/ERC20_ABI";
+import { MarketPriceService } from "../market/MarketPriceService";
 import { queries } from "../../src/db";
 import crypto from "crypto";
 
@@ -43,12 +44,15 @@ export interface PortfolioEntry {
   balanceDecimal: number;
   network: string;
   updatedAt: string;
+  priceUsd: number | null;
+  priceAvailable: boolean;
+  valueUsd: number | null;
 }
 
 export interface Portfolio {
   walletAddress: string;
   holdings: PortfolioEntry[];
-  totalValueUSD?: number; // Future: when price feed integrated
+  totalValueUSD: number | null; // null when any priced asset is unavailable
   updatedAt: string;
 }
 
@@ -97,21 +101,11 @@ async function fetchTokenBalance(
       throw new Error("Blockchain service not ready");
     }
 
-    // Create contract instance using BlockchainService's provider
-    // Note: This requires BlockchainService to expose its provider
-    // For MVP, we'll use a direct JSON-RPC call via ethers.js
-    const rpcUrl = process.env.CHAINSTACK_RPC_URL;
-    if (!rpcUrl) {
-      throw new Error("RPC URL not configured");
-    }
-
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const contract = new Contract(token.address, ERC20_ABI, provider);
-
-    // Call balanceOf(walletAddress)
+    // Routed through BlockchainService → ChainstackProvider (never a
+    // separate ethers provider instance) so all RPC traffic is Chainstack-only.
     let balance: bigint;
     try {
-      balance = await contract.balanceOf(walletAddress);
+      balance = await blockchainService.readContract(token.address, ERC20_ABI, "balanceOf", [walletAddress]);
     } catch {
       // Token might not exist at this address or user has zero balance
       balance = BigInt(0);
@@ -234,29 +228,48 @@ export function persistBalances(
  * @param walletAddress User's wallet address
  * @returns Portfolio object with all holdings
  */
-export function getPortfolioFromDatabase(walletAddress: string): Portfolio {
+export function getPortfolioFromDatabase(walletAddress: string): Promise<Portfolio> {
   const holdings = queries.userHoldings.getByWallet.all(
     walletAddress.toLowerCase()
   ) as any[];
 
-  const entries: PortfolioEntry[] = holdings
-    .filter((h) => !h.error) // Exclude entries with errors
-    .map((h) => ({
-      walletAddress: h.walletAddress,
-      chainId: h.chainId,
-      tokenSymbol: h.tokenSymbol,
-      tokenAddress: h.tokenAddress,
-      balance: h.balance,
-      balanceDecimal: h.balanceDecimal,
-      network: getTokenConfig(h.tokenSymbol, h.chainId)?.network || "unknown",
-      updatedAt: h.updatedAt,
-    }));
+  const visible = holdings.filter((h) => !h.error);
 
-  return {
-    walletAddress,
-    holdings: entries,
-    updatedAt: new Date().toISOString(),
-  };
+  return Promise.all(
+    visible.map(async (h) => {
+      const tokenConfig = getTokenConfig(h.tokenSymbol, h.chainId);
+      const coingeckoId = h.tokenSymbol === "ETH" ? "ethereum" : tokenConfig?.coingeckoId;
+      const price = await MarketPriceService.getPriceUsd(coingeckoId);
+      const valueUsd = price.available && price.usd !== null ? price.usd * h.balanceDecimal : null;
+
+      const entry: PortfolioEntry = {
+        walletAddress: h.walletAddress,
+        chainId: h.chainId,
+        tokenSymbol: h.tokenSymbol,
+        tokenAddress: h.tokenAddress,
+        balance: h.balance,
+        balanceDecimal: h.balanceDecimal,
+        network: tokenConfig?.network || "unknown",
+        updatedAt: h.updatedAt,
+        priceUsd: price.usd,
+        priceAvailable: price.available,
+        valueUsd,
+      };
+      return entry;
+    })
+  ).then((entries) => {
+    const anyUnavailable = entries.some((e) => !e.priceAvailable);
+    const totalValueUSD = anyUnavailable
+      ? null
+      : entries.reduce((sum, e) => sum + (e.valueUsd ?? 0), 0);
+
+    return {
+      walletAddress,
+      holdings: entries,
+      totalValueUSD,
+      updatedAt: new Date().toISOString(),
+    };
+  });
 }
 
 /**
@@ -328,11 +341,11 @@ export async function getPortfolio(
  * @param symbol Token symbol (e.g., "USDC")
  * @returns PortfolioEntry or undefined
  */
-export function getTokenBalance(
+export async function getTokenBalance(
   walletAddress: string,
   chainId: number,
   symbol: string
-): PortfolioEntry | undefined {
+): Promise<PortfolioEntry | undefined> {
   const holding = queries.userHoldings.getByWalletAndToken.get(
     walletAddress.toLowerCase(),
     chainId,
@@ -343,6 +356,10 @@ export function getTokenBalance(
     return undefined;
   }
 
+  const tokenConfig = getTokenConfig(holding.tokenSymbol, holding.chainId);
+  const coingeckoId = holding.tokenSymbol === "ETH" ? "ethereum" : tokenConfig?.coingeckoId;
+  const price = await MarketPriceService.getPriceUsd(coingeckoId);
+
   return {
     walletAddress: holding.walletAddress,
     chainId: holding.chainId,
@@ -350,8 +367,11 @@ export function getTokenBalance(
     tokenAddress: holding.tokenAddress,
     balance: holding.balance,
     balanceDecimal: holding.balanceDecimal,
-    network: getTokenConfig(holding.tokenSymbol, holding.chainId)?.network || "unknown",
+    network: tokenConfig?.network || "unknown",
     updatedAt: holding.updatedAt,
+    priceUsd: price.usd,
+    priceAvailable: price.available,
+    valueUsd: price.available && price.usd !== null ? price.usd * holding.balanceDecimal : null,
   };
 }
 

@@ -9,8 +9,8 @@ import { Badge } from "@/components/ui/badge";
 const VAULT_ASSETS = [
   { asset: "Bitcoin", symbol: "BTC", balance: "4.2180", usd: "$283,610", network: "Bitcoin", custody: "Multi-sig 2/3" },
   { asset: "Ethereum", symbol: "ETH", balance: "82.40", usd: "$281,989", network: "Ethereum", custody: "MPC Wallet" },
-  { asset: "HyperToken", symbol: "HXT", balance: "500,000", usd: "$62,500", network: "Kaleido Fabric", custody: "HSM" },
-  { asset: "NexusBond", symbol: "NXB", balance: "12,000", usd: "$14,400", network: "Kaleido Fabric", custody: "HSM" },
+  { asset: "HyperToken", symbol: "HXT", balance: "500,000", usd: "$62,500", network: "Demo Network", custody: "HSM" },
+  { asset: "NexusBond", symbol: "NXB", balance: "12,000", usd: "$14,400", network: "Demo Network", custody: "HSM" },
 ];
 
 const SIGNERS = [
@@ -35,7 +35,7 @@ export default function CustodyPage() {
             Custody & Secure Storage
           </h2>
           <p className="text-white/50 mt-1 text-sm">
-            Institutional-grade MPC and HSM-backed custody for digital assets on your Kaleido Fabric network. Multi-signature policy enforcement on every transaction.
+            Institutional-grade MPC and HSM-backed custody for digital assets. This module is a simulated demo — no real custody operations occur.
           </p>
         </div>
         <button onClick={() => setShowBalance(s => !s)} className="p-2 text-white/40 hover:text-white transition-colors">
@@ -99,7 +99,7 @@ export default function CustodyPage() {
             <Shield className="h-5 w-5 text-[#ffae00] flex-shrink-0 mt-0.5" />
             <div>
               <p className="text-[#ffae00] font-medium text-sm">Multi-Signature Policy: 2 of 3</p>
-              <p className="text-white/50 text-xs mt-0.5">Any withdrawal requires 2 out of 3 authorized signers to approve. Signing events are logged immutably on the Kaleido Fabric ledger.</p>
+              <p className="text-white/50 text-xs mt-0.5">Any withdrawal requires 2 out of 3 authorized signers to approve. This is a demo — no signing events are recorded on any real ledger.</p>
             </div>
           </div>
 

@@ -65,6 +65,13 @@ export interface BlockchainResponse<T> {
   error?: string;
 }
 
+export interface GasEstimateRequest {
+  from?: string;
+  to: string;
+  data?: string;
+  value?: string;
+}
+
 export interface BlockchainProvider {
   connect(): Promise<ProviderConnectionStatus>;
   disconnect(): Promise<void>;
@@ -75,4 +82,7 @@ export interface BlockchainProvider {
   getBalance(address: string): Promise<string>;
   getTransaction(txHash: string): Promise<any>;
   healthCheck(): Promise<boolean>;
+  estimateGas(request: GasEstimateRequest): Promise<string>;
+  getFeeData(): Promise<{ gasPrice: string | null; maxFeePerGas: string | null; maxPriorityFeePerGas: string | null }>;
+  getWebSocketStatus(): { configured: boolean; connected: boolean; error: string | null };
 }

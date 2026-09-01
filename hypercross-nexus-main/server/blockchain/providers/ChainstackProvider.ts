@@ -32,7 +32,12 @@ export class ChainstackProvider implements BlockchainProvider {
 
     this.rpcTimeoutMs = Number(config.rpcTimeoutMs) > 0 ? Number(config.rpcTimeoutMs) : 15000;
     this.provider = new JsonRpcProvider(rpcUrl, undefined, { staticNetwork: false });
-    this.wallet = config.privateKey ? new Wallet(config.privateKey, this.provider) : undefined;
+
+    // Server-side signing is disabled by default even if CHAINSTACK_PRIVATE_KEY is
+    // set. Normal user operations (transfers, approvals, swaps) are always signed
+    // by the connected wallet client-side; this is only for optional automation.
+    const serverSignerEnabled = ["true", "1"].includes((process.env.ENABLE_SERVER_SIGNER || "false").trim().toLowerCase());
+    this.wallet = serverSignerEnabled && config.privateKey ? new Wallet(config.privateKey, this.provider) : undefined;
     this.status = {
       provider: "chainstack",
       connected: false,
@@ -187,9 +192,16 @@ export class ChainstackProvider implements BlockchainProvider {
     }
   }
 
+  /**
+   * Health requires BOTH eth_chainId (via getNetwork) and eth_blockNumber to succeed.
+   * A provider that responds to only one of these is not considered healthy.
+   */
   async healthCheck(): Promise<boolean> {
     try {
-      await this.withTimeout(this.provider.getBlockNumber());
+      await Promise.all([
+        this.withTimeout(this.provider.getNetwork()),
+        this.withTimeout(this.provider.getBlockNumber()),
+      ]);
       return true;
     } catch {
       return false;
@@ -218,6 +230,35 @@ export class ChainstackProvider implements BlockchainProvider {
       return await this.provider.getTransaction(txHash);
     } catch (error) {
       throw new BlockchainRpcError(error instanceof Error ? error.message : `Unable to fetch transaction ${txHash}.`);
+    }
+  }
+
+  async estimateGas(request: { from?: string; to: string; data?: string; value?: string }): Promise<string> {
+    try {
+      const gas = await this.withTimeout(
+        this.provider.estimateGas({
+          from: request.from,
+          to: request.to,
+          data: request.data,
+          value: request.value ? BigInt(request.value) : undefined,
+        })
+      );
+      return gas.toString();
+    } catch (error) {
+      throw new BlockchainRpcError(error instanceof Error ? error.message : "Unable to estimate gas.");
+    }
+  }
+
+  async getFeeData(): Promise<{ gasPrice: string | null; maxFeePerGas: string | null; maxPriorityFeePerGas: string | null }> {
+    try {
+      const fee = await this.withTimeout(this.provider.getFeeData());
+      return {
+        gasPrice: fee.gasPrice != null ? fee.gasPrice.toString() : null,
+        maxFeePerGas: fee.maxFeePerGas != null ? fee.maxFeePerGas.toString() : null,
+        maxPriorityFeePerGas: fee.maxPriorityFeePerGas != null ? fee.maxPriorityFeePerGas.toString() : null,
+      };
+    } catch (error) {
+      throw new BlockchainRpcError(error instanceof Error ? error.message : "Unable to fetch fee data.");
     }
   }
 

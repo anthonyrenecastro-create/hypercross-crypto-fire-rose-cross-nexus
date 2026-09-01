@@ -12,6 +12,10 @@ import DerivativesPage from "./pages/DerivativesPage";
 import CopyTradingPage from "./pages/CopyTradingPage";
 import MiningPoolsPage from "./pages/MiningPoolsPage";
 import CustodyPage from "./pages/CustodyPage";
+import SendPage from "./pages/SendPage";
+import SwapPage from "./pages/SwapPage";
+import TransactionHistoryPage from "./pages/TransactionHistoryPage";
+import WalletStatusPanel from "./components/WalletStatusPanel";
 import { 
   Activity, 
   Box, 
@@ -132,7 +136,6 @@ export default function App() {
   const [userEmail, setUserEmail] = useState<string>("");
   const [checkoutPlan, setCheckoutPlan] = useState<PlanTier | null>(null);
   const [checkoutSuccess, setCheckoutSuccess] = useState<string | null>(null);
-  const [fabricStrictMode, setFabricStrictMode] = useState(false);
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
   const [recentTrades, setRecentTrades] = useState<ExecutedTrade[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
@@ -149,8 +152,16 @@ export default function App() {
   const [paymentsError, setPaymentsError] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PlanTier | null>(null);
   const [oauthWindow, setOAuthWindow] = useState<Window | null>(null);
-  type PageKey = 'overview' | 'chainstack' | 'assets' | 'rwa' | 'fundraising' | 'nft' | 'launchpad' | 'sports' | 'derivatives' | 'copytrading' | 'mining' | 'custody' | 'settings' | 'billing';
+  type PageKey = 'overview' | 'chainstack' | 'send' | 'swap' | 'transactions' | 'assets' | 'rwa' | 'fundraising' | 'nft' | 'launchpad' | 'sports' | 'derivatives' | 'copytrading' | 'mining' | 'custody' | 'settings' | 'billing';
   const [activePage, setActivePage] = useState<PageKey>('overview');
+  const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    fetch("/api/config/features")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => { if (payload?.features) setFeatureFlags(payload.features); })
+      .catch(() => {});
+  }, []);
 
   const loadPaymentConnections = async () => {
     try {
@@ -335,25 +346,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/live/connection-status")
-      .then((r) => r.ok ? r.json() : null)
-      .then((status) => { if (status?.strictMode) setFabricStrictMode(true); })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
     if (!isLoggedIn) return;
 
     const loadTradingData = async () => {
       try {
         setAccountsLoading(true);
         const [accountsRes, tradesRes] = await Promise.all([
-          fetch("/api/live/linked-accounts"),
-          fetch("/api/live/trades?limit=8"),
+          fetch("/api/paper/accounts"),
+          fetch("/api/paper/trades?limit=8"),
         ]);
 
         if (accountsRes.ok) {
-          const accounts: LinkedAccount[] = await accountsRes.json();
+          const payload = await accountsRes.json();
+          const accounts: LinkedAccount[] = payload.accounts ?? [];
           setLinkedAccounts(accounts);
           if (!selectedAccountId && accounts.length > 0) {
             setSelectedAccountId(accounts[0].id);
@@ -361,11 +366,11 @@ export default function App() {
         }
 
         if (tradesRes.ok) {
-          const trades: ExecutedTrade[] = await tradesRes.json();
-          setRecentTrades(trades);
+          const payload = await tradesRes.json();
+          setRecentTrades(payload.trades ?? []);
         }
       } catch (err) {
-        console.error("Failed to fetch trading dashboard data:", err);
+        console.error("Failed to fetch paper trading dashboard data:", err);
       } finally {
         setAccountsLoading(false);
       }
@@ -404,7 +409,7 @@ export default function App() {
 
     try {
       setTrading(true);
-      const res = await fetch("/api/live/execute-trade", {
+      const res = await fetch("/api/paper/trades/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -422,7 +427,7 @@ export default function App() {
         return;
       }
 
-      setTradeSuccess(`${tradeSide} ${quantity} ${tradeInstrument} filled at ${price.toLocaleString()}.`);
+      setTradeSuccess(`[PAPER TRADING — NO REAL ASSETS] ${tradeSide} ${quantity} ${tradeInstrument} filled at ${price.toLocaleString()}.`);
 
       if (payload?.account?.id) {
         setLinkedAccounts((prev) => prev.map((acc) => {
@@ -535,24 +540,27 @@ export default function App() {
           <SidebarSection label="Platform" />
           <NavItem icon={<LayoutDashboard size={18} />} label="Overview" active={activePage === 'overview'} onClick={() => setActivePage('overview')} />
           <NavItem icon={<Network size={18} />} label="Chainstack Connect" active={activePage === 'chainstack'} onClick={() => setActivePage('chainstack')} />
+          <NavItem icon={<Send size={18} />} label="Send" active={activePage === 'send'} onClick={() => setActivePage('send')} />
+          <NavItem icon={<ChevronRight size={18} />} label="Swap" active={activePage === 'swap'} onClick={() => setActivePage('swap')} />
+          <NavItem icon={<Receipt size={18} />} label="Transactions" active={activePage === 'transactions'} onClick={() => setActivePage('transactions')} />
 
           <SidebarSection label="Asset Services" />
           <NavItem icon={<Coins size={18} />} label="Digital Assets" active={activePage === 'assets'} onClick={() => setActivePage('assets')} />
-          <NavItem icon={<Landmark size={18} />} label="RWA Infrastructure" active={activePage === 'rwa'} onClick={() => setActivePage('rwa')} />
-          <NavItem icon={<ImageIcon size={18} />} label="NFT Marketplace" active={activePage === 'nft'} onClick={() => setActivePage('nft')} />
+          <NavItem icon={<Landmark size={18} />} label="RWA Infrastructure" active={activePage === 'rwa'} onClick={() => setActivePage('rwa')} badge={featureFlags.rwa ? undefined : "Soon"} />
+          <NavItem icon={<ImageIcon size={18} />} label="NFT Marketplace" active={activePage === 'nft'} onClick={() => setActivePage('nft')} badge={featureFlags.nft ? undefined : "Soon"} />
 
           <SidebarSection label="Finance" />
-          <NavItem icon={<TrendingUp size={18} />} label="Token Fundraising" active={activePage === 'fundraising'} onClick={() => setActivePage('fundraising')} />
-          <NavItem icon={<Rocket size={18} />} label="Token Launchpad" active={activePage === 'launchpad'} onClick={() => setActivePage('launchpad')} />
-          <NavItem icon={<BarChart2 size={18} />} label="Derivatives" active={activePage === 'derivatives'} onClick={() => setActivePage('derivatives')} />
-          <NavItem icon={<UserCheck size={18} />} label="Copy Trading" active={activePage === 'copytrading'} onClick={() => setActivePage('copytrading')} />
+          <NavItem icon={<TrendingUp size={18} />} label="Token Fundraising" active={activePage === 'fundraising'} onClick={() => setActivePage('fundraising')} badge={featureFlags.launchpad ? undefined : "Soon"} />
+          <NavItem icon={<Rocket size={18} />} label="Token Launchpad" active={activePage === 'launchpad'} onClick={() => setActivePage('launchpad')} badge={featureFlags.launchpad ? undefined : "Soon"} />
+          <NavItem icon={<BarChart2 size={18} />} label="Derivatives" active={activePage === 'derivatives'} onClick={() => setActivePage('derivatives')} badge={featureFlags.derivatives ? undefined : "Soon"} />
+          <NavItem icon={<UserCheck size={18} />} label="Copy Trading" active={activePage === 'copytrading'} onClick={() => setActivePage('copytrading')} badge={featureFlags.copyTrading ? undefined : "Soon"} />
 
           <SidebarSection label="Trading" />
-          <NavItem icon={<Trophy size={18} />} label="Sports Trading" active={activePage === 'sports'} onClick={() => setActivePage('sports')} />
+          <NavItem icon={<Trophy size={18} />} label="Sports Trading" active={activePage === 'sports'} onClick={() => setActivePage('sports')} badge={featureFlags.sports ? undefined : "Soon"} />
 
           <SidebarSection label="Infrastructure" />
-          <NavItem icon={<HardDrive size={18} />} label="Mining Pools" active={activePage === 'mining'} onClick={() => setActivePage('mining')} />
-          <NavItem icon={<KeyRound size={18} />} label="Custody & Storage" active={activePage === 'custody'} onClick={() => setActivePage('custody')} />
+          <NavItem icon={<HardDrive size={18} />} label="Mining Pools" active={activePage === 'mining'} onClick={() => setActivePage('mining')} badge={featureFlags.mining ? undefined : "Soon"} />
+          <NavItem icon={<KeyRound size={18} />} label="Custody & Storage" active={activePage === 'custody'} onClick={() => setActivePage('custody')} badge={featureFlags.custody ? undefined : "Soon"} />
 
           <SidebarSection label="Account" />
           <NavItem icon={<Receipt size={18} />} label="Billing" active={activePage === 'billing'} onClick={() => setActivePage('billing')} />
@@ -573,14 +581,6 @@ export default function App() {
               {checkoutSuccess}
             </div>
             <button onClick={() => setCheckoutSuccess(null)} className="text-green-400/60 hover:text-green-300 text-lg leading-none">×</button>
-          </div>
-        )}
-        {/* Strict-mode admin banner */}
-        {fabricStrictMode && (
-          <div className="flex-shrink-0 flex items-center justify-center gap-2 px-6 py-2 bg-gradient-to-r from-[#ffae00]/20 to-[#ff6600]/20 border-b border-[#ffae00]/40 text-[#ffae00] text-xs font-semibold tracking-widest uppercase select-none z-20">
-            <ShieldAlert className="h-3.5 w-3.5" />
-            Strict Chainstack Mode Active
-            <ShieldAlert className="h-3.5 w-3.5" />
           </div>
         )}
         {/* Header */}
@@ -612,32 +612,41 @@ export default function App() {
         {activePage === 'assets' && (
           <div className="flex-1 overflow-y-auto p-8"><DigitalAssetsPage /></div>
         )}
+        {activePage === 'send' && (
+          <div className="flex-1 overflow-y-auto p-8"><SendPage /></div>
+        )}
+        {activePage === 'swap' && (
+          <div className="flex-1 overflow-y-auto p-8"><SwapPage /></div>
+        )}
+        {activePage === 'transactions' && (
+          <div className="flex-1 overflow-y-auto p-8"><TransactionHistoryPage /></div>
+        )}
         {activePage === 'rwa' && (
-          <div className="flex-1 overflow-y-auto p-8"><RWAPage /></div>
+          <div className="flex-1 overflow-y-auto p-8">{featureFlags.rwa ? <RWAPage /> : <ComingSoonPage label="RWA Infrastructure" />}</div>
         )}
         {activePage === 'fundraising' && (
-          <div className="flex-1 overflow-y-auto p-8"><TokenFundraisingPage /></div>
+          <div className="flex-1 overflow-y-auto p-8">{featureFlags.launchpad ? <TokenFundraisingPage /> : <ComingSoonPage label="Token Fundraising" />}</div>
         )}
         {activePage === 'nft' && (
-          <div className="flex-1 overflow-y-auto p-8"><NFTMarketplacePage /></div>
+          <div className="flex-1 overflow-y-auto p-8">{featureFlags.nft ? <NFTMarketplacePage /> : <ComingSoonPage label="NFT Marketplace" />}</div>
         )}
         {activePage === 'launchpad' && (
-          <div className="flex-1 overflow-y-auto p-8"><TokenLaunchpadPage /></div>
+          <div className="flex-1 overflow-y-auto p-8">{featureFlags.launchpad ? <TokenLaunchpadPage /> : <ComingSoonPage label="Token Launchpad" />}</div>
         )}
         {activePage === 'sports' && (
-          <div className="flex-1 overflow-y-auto p-8"><SportsTradingPage /></div>
+          <div className="flex-1 overflow-y-auto p-8">{featureFlags.sports ? <SportsTradingPage /> : <ComingSoonPage label="Sports Trading" />}</div>
         )}
         {activePage === 'derivatives' && (
-          <div className="flex-1 overflow-y-auto p-8"><DerivativesPage /></div>
+          <div className="flex-1 overflow-y-auto p-8">{featureFlags.derivatives ? <DerivativesPage /> : <ComingSoonPage label="Derivatives" />}</div>
         )}
         {activePage === 'copytrading' && (
-          <div className="flex-1 overflow-y-auto p-8"><CopyTradingPage /></div>
+          <div className="flex-1 overflow-y-auto p-8">{featureFlags.copyTrading ? <CopyTradingPage /> : <ComingSoonPage label="Copy Trading" />}</div>
         )}
         {activePage === 'mining' && (
-          <div className="flex-1 overflow-y-auto p-8"><MiningPoolsPage /></div>
+          <div className="flex-1 overflow-y-auto p-8">{featureFlags.mining ? <MiningPoolsPage /> : <ComingSoonPage label="Mining Pools" />}</div>
         )}
         {activePage === 'custody' && (
-          <div className="flex-1 overflow-y-auto p-8"><CustodyPage /></div>
+          <div className="flex-1 overflow-y-auto p-8">{featureFlags.custody ? <CustodyPage /> : <ComingSoonPage label="Custody & Storage" />}</div>
         )}
         {activePage === 'settings' && (
           <div className="flex-1 overflow-y-auto p-8">
@@ -667,6 +676,9 @@ export default function App() {
         )}
         {activePage === 'overview' && (
         <div className="flex-1 overflow-y-auto p-8 space-y-8">
+          {/* Real wallet state (wagmi) */}
+          <WalletStatusPanel />
+
           {/* Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard 
@@ -961,7 +973,7 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const featureHighlights = [
-    "Hyperledger Fabric auto-connect with strict operational mode",
+    "Chainstack-native EVM connectivity with real-time RPC health status",
     "Digital assets, RWAs, NFT marketplace, fundraising, and launchpad in one control plane",
     "Institutional custody, mining telemetry, and derivatives modules",
     "Desktop + web runtime with optional local SQLite persistence",
@@ -1094,7 +1106,7 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
             </span>
           </h2>
           <p className="text-white/55 text-lg max-w-md leading-relaxed">
-            One platform for digital asset issuance, RWA tokenization, NFT markets, structured finance, and live Hyperledger Fabric operations.
+            One platform for wallet-verified portfolio tracking, real Chainstack RPC connectivity, and on-chain asset operations.
           </p>
         </div>
 
@@ -1154,7 +1166,7 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
                 </div>
                 <p className="text-white/85 text-sm font-semibold">Hyper-Cross Nexus</p>
               </div>
-              <p className="text-white/40 text-xs">Institutional DeFi · Fabric automation · Enterprise onboarding</p>
+              <p className="text-white/40 text-xs">Chainstack-native EVM · Wallet-signed transactions · Enterprise onboarding</p>
             </div>
 
             {/* Title */}
@@ -1460,7 +1472,7 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
             <div className="px-6 py-5" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <p className="text-sm text-white/70 font-medium mb-1">Get started</p>
               <p className="text-xs text-white/35 mb-4">
-                Create an account to access Fabric-integrated onboarding and platform modules.
+                Create an account to access wallet-connected onboarding and platform modules.
               </p>
               <button
                 type="button"
@@ -1937,7 +1949,7 @@ function SidebarSection({ label }: { label: string }) {
   );
 }
 
-function NavItem({ icon, label, active = false, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
+function NavItem({ icon, label, active = false, onClick, badge }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void; badge?: string }) {
   return (
     <button 
       onClick={onClick}
@@ -1951,8 +1963,29 @@ function NavItem({ icon, label, active = false, onClick }: { icon: React.ReactNo
       <span className={active ? 'text-[#1500ff] drop-shadow-[0_0_8px_rgba(21,0,255,0.8)]' : ''}>
         {icon}
       </span>
-      <span className="font-medium text-sm">{label}</span>
+      <span className="font-medium text-sm flex-1 text-left">{label}</span>
+      {badge && (
+        <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-white/10 text-white/40">
+          {badge}
+        </span>
+      )}
     </button>
+  );
+}
+
+function ComingSoonPage({ label }: { label: string }) {
+  return (
+    <div className="max-w-lg mx-auto text-center py-24 space-y-3">
+      <h2 className="text-2xl font-bold text-white">{label}</h2>
+      <p className="text-white/50 text-sm">
+        This module is not part of the active MVP and is disabled by default. No financial
+        execution is available here. Enable it explicitly via the corresponding FEATURE_* flag
+        for local demo purposes only.
+      </p>
+      <div className="inline-block px-4 py-1.5 rounded-full border border-white/10 text-white/40 text-xs uppercase tracking-widest">
+        Coming Soon
+      </div>
+    </div>
   );
 }
 

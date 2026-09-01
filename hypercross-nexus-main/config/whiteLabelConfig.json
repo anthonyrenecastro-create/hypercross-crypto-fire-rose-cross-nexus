@@ -9,29 +9,23 @@
   "accentColor": "#ffae00",
   "modules": {
     "overview": { "enabled": true, "label": "Overview" },
-    "fabricConnect": { "enabled": true, "label": "Chainstack Connection" },
+    "chainstackConnect": { "enabled": true, "label": "Chainstack Connection" },
     "digitalAssets": { "enabled": true, "label": "Digital Assets", "dataSource": "chainstack-evm", "network": "ethereum" },
-    "rwa": { "enabled": true, "label": "RWA Infrastructure", "dataSource": "chainstack-evm", "network": "ethereum" },
-    "nftMarketplace": { "enabled": true, "label": "NFT Marketplace", "dataSource": "chainstack-evm", "network": "polygon" },
-    "tokenFundraising": { "enabled": true, "label": "Token Fundraising", "dataSource": "chainstack-evm", "network": "base" },
-    "tokenLaunchpad": { "enabled": true, "label": "Token Launchpad", "dataSource": "chainstack-evm", "network": "arbitrum" },
-    "sportsTrading": { "enabled": true, "label": "Sports Trading", "dataSource": "external-api", "apiUrl": "https://api.sportsdata.io" },
-    "derivatives": { "enabled": true, "label": "Derivatives", "dataSource": "external-api", "apiUrl": "https://api.coingecko.com" },
-    "copyTrading": { "enabled": true, "label": "Copy Trading", "dataSource": "fabric-chaincode", "chaincode": "copytrading" },
-    "miningPools": { "enabled": true, "label": "Mining Pools", "dataSource": "external-api", "apiUrl": "https://api.mining.example.com" },
-    "custody": { "enabled": true, "label": "Custody & Storage", "dataSource": "fabric-chaincode", "chaincode": "custody" }
+    "rwa": { "enabled": false, "label": "RWA Infrastructure", "dataSource": "demo", "network": "ethereum" },
+    "nftMarketplace": { "enabled": false, "label": "NFT Marketplace", "dataSource": "demo", "network": "polygon" },
+    "tokenFundraising": { "enabled": false, "label": "Token Fundraising", "dataSource": "demo", "network": "base" },
+    "tokenLaunchpad": { "enabled": false, "label": "Token Launchpad", "dataSource": "demo", "network": "arbitrum" },
+    "sportsTrading": { "enabled": false, "label": "Sports Trading", "dataSource": "external-api", "apiUrl": "https://api.sportsdata.io" },
+    "derivatives": { "enabled": false, "label": "Derivatives", "dataSource": "external-api", "apiUrl": "https://api.coingecko.com" },
+    "copyTrading": { "enabled": false, "label": "Copy Trading", "dataSource": "demo" },
+    "miningPools": { "enabled": false, "label": "Mining Pools", "dataSource": "external-api", "apiUrl": "https://api.mining.example.com" },
+    "custody": { "enabled": false, "label": "Custody & Storage", "dataSource": "demo" }
   },
   "datasources": {
     "chainstack": {
       "baseUrl": "https://your-chainstack-rpc-endpoint",
       "type": "json-rpc",
       "timeout": 15000
-    },
-    "fabric": {
-      "restGatewayUrl": "",
-      "type": "legacy-fabric",
-      "timeout": 15000,
-      "channels": ["default-channel", "rwa-channel", "nft-channel"]
     },
     "coingecko": {
       "baseUrl": "https://api.coingecko.com/api/v3",

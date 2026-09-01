@@ -31,7 +31,7 @@ export default function RWAPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch live RWAs from Fabric
+  // Placeholder: real RWA data source not yet integrated
   useEffect(() => {
     const fetchRWAs = async () => {
       try {
@@ -78,7 +78,7 @@ export default function RWAPage() {
           Real World Asset Infrastructure
         </h2>
         <p className="text-white/50 mt-1 text-sm">
-          Tokenize physical and off-chain assets on your permissioned Kaleido Fabric network with built-in KYC/AML compliance checks.
+          Tokenize physical and off-chain assets with built-in KYC/AML compliance checks. This module is a simulated demo.
         </p>
       </div>
 
@@ -97,7 +97,7 @@ export default function RWAPage() {
         <FileCheck className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
         <div>
           <p className="text-blue-300 font-medium text-sm">Compliance & KYC Layer Active</p>
-          <p className="text-white/50 text-xs mt-0.5">All RWA token transfers are subject to on-chain KYC/AML verification via the Kaleido Token Factory compliance module. Accredited investor checks enforced per Reg D / Reg S.</p>
+          <p className="text-white/50 text-xs mt-0.5">All RWA token transfers shown here are demo data. Accredited investor checks enforced per Reg D / Reg S in a production deployment.</p>
         </div>
       </div>
 
@@ -156,7 +156,7 @@ export default function RWAPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-white/70">Fabric Channel</Label>
+                  <Label className="text-white/70">Asset Category</Label>
                   <Input value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))} placeholder="rwa-channel" className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-blue-500" />
                 </div>
               </div>
@@ -164,7 +164,7 @@ export default function RWAPage() {
             <div className="flex gap-2 pt-2">
               {step > 0 && <Button variant="outline" onClick={() => setStep(s => s - 1)} className="flex-1 border-white/10 text-white/70 hover:bg-white/10">Back</Button>}
               <Button onClick={() => setStep(s => Math.min(s + 1, 2))} disabled={step === 2 && !form.channel} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white border-0 disabled:opacity-40">
-                {step < 2 ? "Next →" : "Deploy to Fabric"}
+                {step < 2 ? "Next →" : "Submit (Demo)"}
               </Button>
             </div>
           </CardContent>

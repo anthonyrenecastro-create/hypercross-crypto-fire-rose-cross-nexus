@@ -29,7 +29,7 @@ export default function NFTMarketplacePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch live NFTs from Fabric
+  // Placeholder: real NFT indexing not yet integrated
   useEffect(() => {
     const fetchNFTs = async () => {
       try {
@@ -38,7 +38,7 @@ export default function NFTMarketplacePage() {
         if (!response.ok) throw new Error("Failed to fetch NFTs");
         const data = await response.json();
         
-        // Transform Fabric NFT data to UI format
+        // Transform data into UI format
         const nftData = Array.isArray(data) ? data.map((item: any, idx: number) => ({
           name: item.name || `NFT #${idx + 1}`,
           collection: item.collection || "Collection",
@@ -79,7 +79,7 @@ export default function NFTMarketplacePage() {
           NFT Marketplace
         </h2>
         <p className="text-white/50 mt-1 text-sm">
-          Mint, list, and trade NFTs on your permissioned Kaleido Fabric network. Creator royalties are enforced on-chain via the NFT chaincode.
+          Mint, list, and trade NFTs. This module is a simulated demo — creator royalty enforcement shown here is illustrative only.
         </p>
       </div>
 
@@ -184,7 +184,7 @@ export default function NFTMarketplacePage() {
                 <Input value={form.royalty} onChange={e => setForm(f => ({ ...f, royalty: e.target.value }))} placeholder="8" className="bg-black/50 border-white/10 text-white placeholder:text-white/30 focus-visible:ring-[#c300ff]" />
               </div>
               <div className="space-y-2">
-                <Label className="text-white/70">Fabric Channel</Label>
+                <Label className="text-white/70">Collection Category</Label>
                 <Input value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))} placeholder="nft-channel" className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-[#c300ff]" />
               </div>
               <div className="col-span-2 space-y-2">
@@ -193,7 +193,7 @@ export default function NFTMarketplacePage() {
               </div>
             </div>
             <Button className="w-full bg-gradient-to-r from-[#c300ff] to-[#1500ff] hover:opacity-90 text-white border-0 shadow-[0_0_15px_rgba(195,0,255,0.20)]">
-              <Plus className="h-4 w-4 mr-2" /> Mint NFT on Fabric
+              <Plus className="h-4 w-4 mr-2" /> Mint NFT (Demo)
             </Button>
           </CardContent>
         </Card>
@@ -201,7 +201,7 @@ export default function NFTMarketplacePage() {
 
       {tab === 'revenue' && (
         <div className="space-y-4">
-          <p className="text-white/50 text-sm">The NFT marketplace revenue model distributes income between creators, the platform, and the Kaleido Fabric network operators.</p>
+          <p className="text-white/50 text-sm">The NFT marketplace revenue model shown here (creator/platform split) is illustrative only in this demo module.</p>
           <div className="grid grid-cols-2 gap-4">
             {REVENUE_MODEL.map(r => (
               <Card key={r.label} className="glass-panel border border-[#c300ff]/20">
