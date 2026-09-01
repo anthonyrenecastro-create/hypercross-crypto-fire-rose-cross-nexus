@@ -12,10 +12,10 @@ import { blockchainService } from "../blockchain/BlockchainService";
 import { getTokenConfig } from "../blockchain/TokenRegistry";
 import { ERC20_ABI } from "../blockchain/ERC20_ABI";
 import { encodeErc20Transfer, toBaseUnits } from "../blockchain/TxBuilder";
+import { nativeAmountToWei, assertPositiveDecimalAmount } from "../blockchain/AmountMath";
 import { TransactionService } from "../transactions/TransactionService";
 import {
   InvalidAddressError,
-  InvalidAmountError,
   InsufficientFundsError,
   InsufficientTokenBalanceError,
   TokenNotRegisteredError,
@@ -26,13 +26,6 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 function assertValidRecipient(to: string): void {
   if (!isAddress(to)) throw new InvalidAddressError(`"${to}" is not a valid address.`);
   if (to.toLowerCase() === ZERO_ADDRESS) throw new InvalidAddressError("Cannot send to the zero address.");
-}
-
-function assertPositiveAmount(amount: string): void {
-  const value = Number(amount);
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new InvalidAmountError(`Amount must be a positive number. Got: "${amount}".`);
-  }
 }
 
 export interface PreparedTransfer {
@@ -53,14 +46,14 @@ async function prepareNativeTransfer(
 ): Promise<PreparedTransfer> {
   blockchainService.assertMainnetWritesAllowed();
   assertValidRecipient(to);
-  assertPositiveAmount(amountEth);
 
   const status = await blockchainService.getStatus();
   if (!status.connected || !status.chainId) {
     throw new Error("Chainstack RPC is not connected.");
   }
 
-  const valueWei = BigInt(Math.round(Number(amountEth) * 1e18)).toString();
+  // Exact wei conversion (ethers parseEther) — never Number()/Math.round()/1e18 float math.
+  const valueWei = nativeAmountToWei(amountEth).toString();
   const balanceWei = BigInt(await blockchainService.getBalance(walletAddress));
   if (balanceWei < BigInt(valueWei)) {
     throw new InsufficientFundsError(
@@ -79,6 +72,8 @@ async function prepareNativeTransfer(
     amount: amountEth,
     value: valueWei,
     gasEstimate,
+    intentTo: to,
+    intentData: null,
   });
 
   return {
@@ -100,7 +95,7 @@ async function prepareErc20Transfer(
 ): Promise<PreparedTransfer> {
   blockchainService.assertMainnetWritesAllowed();
   assertValidRecipient(to);
-  assertPositiveAmount(amountHuman);
+  assertPositiveDecimalAmount(amountHuman);
 
   const status = await blockchainService.getStatus();
   if (!status.connected || !status.chainId) {
@@ -135,6 +130,8 @@ async function prepareErc20Transfer(
     amount: amountHuman,
     value: "0",
     gasEstimate,
+    intentTo: token.address,
+    intentData: data,
   });
 
   return {

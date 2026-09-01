@@ -900,10 +900,13 @@ async function startServer() {
 
   // ── Transaction Manager ──
   // Persistent record of real on-chain transactions. Status only becomes CONFIRMED
-  // after a real transaction receipt is observed.
+  // after a real transaction receipt is observed AND its intent has been verified.
+  // Every lookup below is ownership-aware: the record must belong to the
+  // authenticated user (by userId or verified wallet address) or the request is
+  // rejected with 404 — never merely because the caller is authenticated.
 
-  app.get("/api/transactions/:id", requireAuth, (req, res) => {
-    const record = TransactionService.getById(req.params.id);
+  app.get("/api/transactions/:id", requireAuth, (req: AuthenticatedRequest, res) => {
+    const record = TransactionService.getForUser(req.params.id, { id: req.user?.id, walletAddress: req.user?.walletAddress });
     if (!record) return res.status(404).json({ ok: false, error: "Transaction not found." });
     return res.json({ ok: true, transaction: record });
   });
@@ -917,8 +920,10 @@ async function startServer() {
   });
 
   // POST /api/transactions/:id/submitted - Record the REAL hash the wallet returned after broadcast.
-  app.post("/api/transactions/:id/submitted", requireAuth, (req, res) => {
+  app.post("/api/transactions/:id/submitted", requireAuth, (req: AuthenticatedRequest, res) => {
     try {
+      const owned = TransactionService.getForUser(req.params.id, { id: req.user?.id, walletAddress: req.user?.walletAddress });
+      if (!owned) return res.status(404).json({ ok: false, error: "Transaction not found." });
       const { transactionHash } = req.body;
       if (!transactionHash || typeof transactionHash !== "string") {
         return res.status(400).json({ ok: false, error: "transactionHash is required." });
@@ -932,14 +937,18 @@ async function startServer() {
   });
 
   // POST /api/transactions/:id/cancelled - Wallet rejected the signature (not a backend failure).
-  app.post("/api/transactions/:id/cancelled", requireAuth, (req, res) => {
+  app.post("/api/transactions/:id/cancelled", requireAuth, (req: AuthenticatedRequest, res) => {
+    const owned = TransactionService.getForUser(req.params.id, { id: req.user?.id, walletAddress: req.user?.walletAddress });
+    if (!owned) return res.status(404).json({ ok: false, error: "Transaction not found." });
     TransactionService.markWalletRejected(req.params.id);
     return res.json({ ok: true, transaction: TransactionService.getById(req.params.id) });
   });
 
   // GET /api/transactions/:id/poll - Poll Chainstack for a receipt and update status.
-  app.get("/api/transactions/:id/poll", requireAuth, async (req, res) => {
+  app.get("/api/transactions/:id/poll", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
+      const owned = TransactionService.getForUser(req.params.id, { id: req.user?.id, walletAddress: req.user?.walletAddress });
+      if (!owned) return res.status(404).json({ ok: false, error: "Transaction not found." });
       const status = await TransactionService.pollReceipt(req.params.id);
       return res.json({ ok: true, status, transaction: TransactionService.getById(req.params.id) });
     } catch (error: any) {
@@ -1005,8 +1014,9 @@ async function startServer() {
     try {
       const walletAddress = req.user?.walletAddress;
       if (!walletAddress) return res.status(400).json({ ok: false, code: "WALLET_NOT_VERIFIED", error: "No verified wallet on this session." });
-      const { tokenAddress, spender } = req.query;
-      const result = await SwapService.checkAllowance(String(tokenAddress), walletAddress, String(spender));
+      const { tokenAddress, spender, requiredAmount } = req.query;
+      if (!requiredAmount) return res.status(400).json({ ok: false, error: "requiredAmount is required." });
+      const result = await SwapService.checkAllowance(String(tokenAddress), walletAddress, String(spender), String(requiredAmount));
       return res.json({ ok: true, ...result });
     } catch (error: any) {
       const payload = toErrorPayload(error);
@@ -1018,8 +1028,10 @@ async function startServer() {
     try {
       const walletAddress = req.user?.walletAddress;
       if (!walletAddress) return res.status(400).json({ ok: false, code: "WALLET_NOT_VERIFIED", error: "No verified wallet on this session." });
-      const { tokenAddress, spender } = req.body;
-      const prepared = await SwapService.prepareApproval(req.user?.id ?? null, walletAddress, String(tokenAddress), String(spender));
+      const { tokenAddress, spender, unlimited } = req.body;
+      const prepared = await SwapService.prepareApproval(req.user?.id ?? null, walletAddress, String(tokenAddress), String(spender), {
+        unlimited: unlimited === true,
+      });
       return res.status(201).json({ ok: true, ...prepared });
     } catch (error: any) {
       const payload = toErrorPayload(error);

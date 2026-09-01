@@ -39,10 +39,15 @@ export interface AllowanceInput {
   tokenAddress: string;
   owner: string;
   spender: string;
+  /** Required amount in base units, as a decimal string. Allowance must be >= this, never just > 0. */
+  requiredAmount: string;
+  /** Default false: approve exactly `requiredAmount`. Only true when the user explicitly opts in. */
+  unlimited?: boolean;
 }
 
 export interface AllowanceResult {
   allowance: string;
+  requiredAmount: string;
   sufficient: boolean;
 }
 

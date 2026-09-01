@@ -13,6 +13,7 @@ import axios from "axios";
 import { blockchainService } from "../blockchain/BlockchainService";
 import { encodeErc20Approve } from "../blockchain/TxBuilder";
 import { SwapUnavailableError } from "../blockchain/errors";
+import { isAllowanceSufficient, resolveApprovalAmount } from "./AllowanceCheck";
 import type {
   SwapProvider,
   SwapQuoteInput,
@@ -87,16 +88,20 @@ async function getAllowance(input: AllowanceInput): Promise<AllowanceResult> {
     "allowance",
     [input.owner, input.spender]
   );
+  const required = BigInt(input.requiredAmount);
   return {
     allowance: allowance.toString(),
-    sufficient: allowance > 0n,
+    requiredAmount: required.toString(),
+    // Never treat allowance > 0 as sufficient — must cover the actual amount required.
+    sufficient: isAllowanceSufficient(allowance, required),
   };
 }
 
 async function buildApprovalTransaction(input: AllowanceInput): Promise<TransactionRequestOutput> {
-  // Max uint256 approval is standard practice for DEX routers; still requires explicit user signature.
-  const maxUint256 = (2n ** 256n - 1n).toString();
-  const data = encodeErc20Approve(input.spender, BigInt(maxUint256));
+  // Default: approve exactly the required amount. Unlimited approval requires the
+  // caller to have explicitly opted in (never the silent default).
+  const amount = resolveApprovalAmount(BigInt(input.requiredAmount), input.unlimited === true);
+  const data = encodeErc20Approve(input.spender, amount);
   const gasEstimate = await blockchainService.estimateGas({ to: input.tokenAddress, data, from: input.owner });
   return { to: input.tokenAddress, data, value: "0", gasEstimate };
 }

@@ -68,3 +68,26 @@ Structured server logs must never include: passwords, JWTs, refresh tokens, Stri
 ## Trade auditing
 
 Every entitlement decision, subscription change, login/logout, and (once wired) trade attempt/execution should call `recordAuditEvent()` (`server/audit/AuditService.ts`), which never accepts secrets in its `metadata` field by convention — reviewers should treat any PR that logs a token/secret through this path as a security bug.
+
+## Transaction ownership (IDOR) — production hardening pass
+
+Every `/api/transactions/:id*` route (`GET :id`, `POST :id/submitted`, `POST :id/cancelled`, `GET :id/poll`) resolves the record via `TransactionService.getForUser(id, { id: req.user.id, walletAddress: req.user.walletAddress })` (`server/transactions/TransactionService.ts`). A transaction is only returned if it belongs to the caller by `userId` or verified `walletAddress`; otherwise the route returns `404` (never `200`/`403` with distinguishing detail, to avoid confirming that a given transaction id exists for someone else). See `tests/transaction-idor.test.ts`.
+
+## Submitted transaction hash verification (anti-spoofing)
+
+A client-reported transaction hash is never trusted at face value. `TransactionService.pollReceipt()`:
+
+1. Waits for a receipt via `eth_getTransactionReceipt`. A receipt with `status !== 1` is marked `FAILED`.
+2. On a successful receipt, fetches the full transaction body via `eth_getTransactionByHash` (`blockchainService.getTransaction`) and compares it against the **intent snapshot** recorded at prepare-time (`intentTo`, `intentData`, `value`, `chainId`, `walletAddress`) using `verifyTransactionIntent()` (`server/transactions/TransactionIntegrity.ts`).
+3. Any mismatch (wrong sender/recipient/amount/calldata/chain, or an unrelated but successful hash) results in `INTEGRITY_FAILED` — the transaction is **never** marked `CONFIRMED`. The mismatch reason is logged server-side (public tx fields only, no secrets).
+
+See `tests/transaction-integrity.test.ts` for the adversarial cases covered (wrong sender, wrong recipient, wrong amount, wrong calldata, wrong chain, unrelated hash, missing transaction).
+
+## Exact financial arithmetic
+
+Native and ERC-20 amount conversions go through `server/blockchain/AmountMath.ts` (`nativeAmountToWei` → `ethers.parseEther`, `tokenAmountToBaseUnits` → `ethers.parseUnits`) and `server/blockchain/TxBuilder.ts#toBaseUnits`. These reject scientific notation, negative values, zero, and sub-unit precision, and never use `Number()`/`Math.round()`/`* 1e18` for authoritative amounts. See `tests/amount-math.test.ts`.
+
+## ERC-20 allowance/approval hardening
+
+`server/swap/AllowanceCheck.ts` compares `allowance >= requiredAmount` (never `allowance > 0`). Approvals default to the exact required amount (`resolveApprovalAmount(required, unlimited=false)`); unlimited approval requires an explicit `unlimited: true` from the caller. The approval `spender` is validated against the `allowanceTarget` returned by the active, trusted 0x quote for that wallet+token — an arbitrary client-supplied spender is rejected (`server/swap/SwapService.ts#prepareApproval`). See `tests/allowance.test.ts`.
+

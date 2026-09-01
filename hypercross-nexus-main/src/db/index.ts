@@ -133,6 +133,8 @@ export function initDb() {
 
   // Real on-chain transactions (transfers, approvals, swaps). Status only becomes
   // CONFIRMED after a real transaction receipt is observed — never on local state alone.
+  // intentTo/intentData/intentValue capture the prepared (unsigned) transaction so the
+  // submitted hash can later be proven to match what the server actually prepared.
   db.exec(`
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
@@ -148,6 +150,8 @@ export function initDb() {
       amount TEXT,
       value TEXT,
       gasEstimate TEXT,
+      intentTo TEXT,
+      intentData TEXT,
       status TEXT NOT NULL DEFAULT 'CREATED',
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       submittedAt DATETIME,
@@ -158,6 +162,16 @@ export function initDb() {
       UNIQUE(transactionHash, chainId)
     )
   `);
+
+  // Migration guard: add intent columns to pre-existing local databases that predate them.
+  const transactionColumns = db.prepare(`PRAGMA table_info(transactions)`).all() as Array<{ name: string }>;
+  const existingColumnNames = new Set(transactionColumns.map((c) => c.name));
+  if (!existingColumnNames.has("intentTo")) {
+    db.exec(`ALTER TABLE transactions ADD COLUMN intentTo TEXT`);
+  }
+  if (!existingColumnNames.has("intentData")) {
+    db.exec(`ALTER TABLE transactions ADD COLUMN intentData TEXT`);
+  }
 
   // Append-only audit trail for wallet/transaction/swap lifecycle events.
   db.exec(`
@@ -624,8 +638,8 @@ export const queries = {
   transactions: {
     create: db.prepare(`
       INSERT INTO transactions
-        (id, userId, walletAddress, chainId, network, operationType, contractAddress, tokenAddress, tokenSymbol, amount, value, gasEstimate, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREATED')
+        (id, userId, walletAddress, chainId, network, operationType, contractAddress, tokenAddress, tokenSymbol, amount, value, gasEstimate, intentTo, intentData, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREATED')
     `),
     setSubmitted: db.prepare(`
       UPDATE transactions
@@ -643,6 +657,11 @@ export const queries = {
     setFailed: db.prepare(`
       UPDATE transactions
       SET status = 'FAILED', confirmedAt = CURRENT_TIMESTAMP, blockNumber = ?, failureReason = ?
+      WHERE id = ?
+    `),
+    setIntegrityFailed: db.prepare(`
+      UPDATE transactions
+      SET status = 'INTEGRITY_FAILED', confirmedAt = CURRENT_TIMESTAMP, failureReason = ?
       WHERE id = ?
     `),
     getById: db.prepare(`SELECT * FROM transactions WHERE id = ?`),

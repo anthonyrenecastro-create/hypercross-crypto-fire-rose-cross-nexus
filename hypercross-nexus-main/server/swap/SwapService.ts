@@ -69,23 +69,62 @@ function getActiveQuote(takerAddress: string, tokenIn: string, tokenOut: string)
   return quote;
 }
 
-async function checkAllowance(tokenAddress: string, owner: string, spender: string) {
+async function checkAllowance(tokenAddress: string, owner: string, spender: string, requiredAmount: string) {
   return ZeroExSwapProvider.getAllowance({
     chainId: (await blockchainService.getStatus()).chainId ?? 0,
     tokenAddress,
     owner,
     spender,
+    requiredAmount,
   });
 }
 
-async function prepareApproval(userId: string | null, walletAddress: string, tokenAddress: string, spender: string) {
+/**
+ * Finds the most recently requested, still-valid quote for this wallet+sell-token,
+ * regardless of buy token. Used to validate that an approval's spender/amount actually
+ * come from a trusted 0x response rather than an arbitrary client-supplied value.
+ */
+function findActiveQuoteBySellToken(walletAddress: string, tokenIn: string): SwapQuote | null {
+  const prefix = `${walletAddress}:${tokenIn}:`.toLowerCase();
+  for (const [key, quote] of activeQuotes.entries()) {
+    if (!key.startsWith(prefix)) continue;
+    if (new Date(quote.quoteExpiresAt).getTime() < Date.now()) {
+      activeQuotes.delete(key);
+      continue;
+    }
+    return quote;
+  }
+  return null;
+}
+
+async function prepareApproval(
+  userId: string | null,
+  walletAddress: string,
+  tokenAddress: string,
+  spender: string,
+  options: { unlimited?: boolean } = {}
+) {
   blockchainService.assertMainnetWritesAllowed();
+  if (!isAddress(spender)) throw new InvalidAddressError("Invalid spender address.");
+
+  // The approval spender/amount must come from a trusted 0x quote, never an arbitrary
+  // client-supplied value — require an active quote for this exact token before approving.
+  const quote = findActiveQuoteBySellToken(walletAddress, tokenAddress);
+  if (!quote) {
+    throw new QuoteExpiredError("No active swap quote for this token. Request a quote before approving.");
+  }
+  if (!quote.allowanceTarget || quote.allowanceTarget.toLowerCase() !== spender.toLowerCase()) {
+    throw new InvalidAddressError("Spender does not match the allowance-holder address from the trusted 0x quote.");
+  }
+
   const status = await blockchainService.getStatus();
   const tx = await ZeroExSwapProvider.buildApprovalTransaction({
     chainId: status.chainId ?? 0,
     tokenAddress,
     owner: walletAddress,
     spender,
+    requiredAmount: quote.amountIn,
+    unlimited: options.unlimited === true,
   });
 
   const transactionId = TransactionService.createTransaction({
@@ -97,9 +136,11 @@ async function prepareApproval(userId: string | null, walletAddress: string, tok
     contractAddress: tokenAddress,
     tokenAddress,
     gasEstimate: tx.gasEstimate,
+    intentTo: tx.to,
+    intentData: tx.data,
   });
 
-  return { transactionId, ...tx };
+  return { transactionId, approvalType: options.unlimited ? "unlimited" : "exact", ...tx };
 }
 
 /**
@@ -124,6 +165,8 @@ async function prepareSwap(userId: string | null, walletAddress: string, tokenIn
     amount: quote.amountIn,
     value: quote.value,
     gasEstimate: quote.estimatedGas,
+    intentTo: quote.to,
+    intentData: quote.data,
   });
 
   return {

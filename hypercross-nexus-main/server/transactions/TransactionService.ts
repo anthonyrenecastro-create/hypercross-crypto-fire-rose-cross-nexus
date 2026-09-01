@@ -9,6 +9,7 @@
 import crypto from "crypto";
 import { queries } from "../../src/db";
 import { blockchainService } from "../blockchain/BlockchainService";
+import { verifyTransactionIntent } from "./TransactionIntegrity";
 
 export type TransactionStatus =
   | "CREATED"
@@ -19,7 +20,8 @@ export type TransactionStatus =
   | "CONFIRMED"
   | "FAILED"
   | "REPLACED"
-  | "CANCELLED";
+  | "CANCELLED"
+  | "INTEGRITY_FAILED";
 
 export interface CreateTransactionInput {
   userId?: string | null;
@@ -33,6 +35,9 @@ export interface CreateTransactionInput {
   amount?: string | null;
   value?: string | null;
   gasEstimate?: string | null;
+  /** Prepared (unsigned) transaction intent snapshot, used to verify the submitted hash later. */
+  intentTo?: string | null;
+  intentData?: string | null;
 }
 
 function createTransaction(input: CreateTransactionInput): string {
@@ -49,9 +54,30 @@ function createTransaction(input: CreateTransactionInput): string {
     input.tokenSymbol ?? null,
     input.amount ?? null,
     input.value ?? null,
-    input.gasEstimate ?? null
+    input.gasEstimate ?? null,
+    input.intentTo ?? null,
+    input.intentData ?? null
   );
   return id;
+}
+
+/**
+ * Ownership-aware lookup. Returns null if the transaction does not exist OR does not
+ * belong to the supplied user (never distinguishes the two to the caller — both cases
+ * should surface as 404 to prevent enumeration of other users' transaction state).
+ */
+function getForUser(id: string, user: { id?: string | null; walletAddress?: string | null }): any {
+  const record = queries.transactions.getById.get(id) as any;
+  if (!record) return null;
+
+  const ownsByUserId = Boolean(record.userId) && Boolean(user.id) && record.userId === user.id;
+  const ownsByWallet =
+    Boolean(record.walletAddress) &&
+    Boolean(user.walletAddress) &&
+    record.walletAddress.toLowerCase() === String(user.walletAddress).toLowerCase();
+
+  if (!ownsByUserId && !ownsByWallet) return null;
+  return record;
 }
 
 function markAwaitingSignature(id: string): void {
@@ -80,12 +106,14 @@ function recordSubmitted(id: string, transactionHash: string): void {
  * Polls Chainstack for a receipt and updates status accordingly.
  * - No receipt yet -> PENDING
  * - Receipt with status !== 1 -> FAILED (reverted), never CONFIRMED
- * - Receipt with status === 1 -> CONFIRMED
+ * - Receipt with status === 1 -> the on-chain transaction body is fetched and compared
+ *   against the recorded intent (from/to/value/data/chainId). Only a MATCHING receipt
+ *   is marked CONFIRMED; any mismatch is marked INTEGRITY_FAILED, never CONFIRMED.
  */
 async function pollReceipt(id: string): Promise<TransactionStatus> {
   const record = queries.transactions.getById.get(id) as any;
   if (!record?.transactionHash) return (record?.status as TransactionStatus) ?? "CREATED";
-  if (record.status === "CONFIRMED" || record.status === "FAILED") {
+  if (record.status === "CONFIRMED" || record.status === "FAILED" || record.status === "INTEGRITY_FAILED") {
     return record.status as TransactionStatus;
   }
 
@@ -99,13 +127,31 @@ async function pollReceipt(id: string): Promise<TransactionStatus> {
     const blockNumber = receipt.blockNumber != null ? Number(receipt.blockNumber) : null;
     const success = receipt.status === "0x1" || receipt.status === 1 || receipt.status === true;
 
-    if (success) {
-      queries.transactions.setConfirmed.run(blockNumber, id);
-      return "CONFIRMED";
+    if (!success) {
+      queries.transactions.setFailed.run(blockNumber, "Transaction reverted on-chain.", id);
+      return "FAILED";
     }
 
-    queries.transactions.setFailed.run(blockNumber, "Transaction reverted on-chain.", id);
-    return "FAILED";
+    // A successful receipt is not sufficient on its own — verify the submitted hash
+    // actually corresponds to the prepared intent before ever marking CONFIRMED.
+    const onChainTx = await blockchainService.getTransaction(record.transactionHash);
+    const check = verifyTransactionIntent(onChainTx, {
+      chainId: record.chainId,
+      fromAddress: record.walletAddress,
+      intentTo: record.intentTo ?? null,
+      intentData: record.intentData ?? null,
+      intentValue: record.value ?? null,
+    });
+
+    if (!check.ok) {
+      // Log the mismatch without exposing secrets (only public tx fields are involved).
+      console.error(`[TransactionIntegrity] Transaction ${id} failed intent verification: ${check.reason}`);
+      queries.transactions.setIntegrityFailed.run(check.reason ?? "Intent verification failed.", id);
+      return "INTEGRITY_FAILED";
+    }
+
+    queries.transactions.setConfirmed.run(blockNumber, id);
+    return "CONFIRMED";
   } catch (error: any) {
     // RPC timeout/unavailable — leave as PENDING, do not fabricate a result.
     if (record.status !== "PENDING") queries.transactions.setStatus.run("PENDING", id);
@@ -147,6 +193,7 @@ export const TransactionService = {
   pollReceipt,
   pollAllPending,
   getById,
+  getForUser,
   getByHash,
   listByWallet,
 };
