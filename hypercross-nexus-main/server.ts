@@ -161,7 +161,7 @@ const SUBSCRIPTION_PLANS: Record<
 > = {
   starter: {
     name: "Starter",
-    priceUsd: 49,
+    priceUsd: 29.99,
     interval: "month",
     stripePriceId: process.env.STRIPE_PRICE_STARTER || null,
     paypalPlanId: process.env.PAYPAL_PLAN_STARTER || null,

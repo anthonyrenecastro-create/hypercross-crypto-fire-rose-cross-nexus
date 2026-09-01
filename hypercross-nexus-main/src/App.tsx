@@ -1875,7 +1875,7 @@ function PaywallScreen({ onSelectPlan }: { onSelectPlan: (plan: PlanTier) => voi
     {
       id: 'starter',
       label: 'Starter',
-      price: '$49/mo',
+      price: '$29.99/mo',
       summary: 'For solo operators validating a market strategy.',
       features: ['2 workspaces', 'Core asset modules', 'Email support'],
       accent: 'from-[#0ea5e9] to-[#0284c7]',

@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 type PlanTier = "starter" | "pro" | "enterprise";
 
 const PLAN_DETAILS: Record<PlanTier, { name: string; price: string; color: string }> = {
-  starter: { name: "Starter", price: "$49/mo", color: "#0ea5e9" },
+  starter: { name: "Starter", price: "$29.99/mo", color: "#0ea5e9" },
   pro: { name: "Pro", price: "$299/mo", color: "#f97316" },
   enterprise: { name: "Enterprise", price: "Custom", color: "#c300ff" },
 };

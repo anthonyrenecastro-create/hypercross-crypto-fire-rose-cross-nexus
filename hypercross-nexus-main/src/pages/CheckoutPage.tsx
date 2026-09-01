@@ -14,7 +14,7 @@ const PLAN_DETAILS: Record<
 > = {
   starter: {
     name: "Starter",
-    price: "$49",
+    price: "$29.99",
     priceNote: "per month",
     color: "#0ea5e9",
     features: [
