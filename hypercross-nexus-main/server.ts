@@ -1732,7 +1732,7 @@ async function startServer() {
   }
 
   async function stripeCreateCustomer(email: string): Promise<string> {
-    const cust = await stripeRequest("POST", "/customers", { email, description: "HyperCross Nexus subscriber" });
+    const cust = await stripeRequest("POST", "/customers", { email, description: "AZ Innovations subscriber" });
     return cust.id as string;
   }
 
@@ -1751,7 +1751,7 @@ async function startServer() {
         currency: "usd",
         unit_amount: String(planDef.priceUsd * 100),
         "recurring[interval]": planDef.interval,
-        "product_data[name]": `HyperCross Nexus — ${planDef.name}`,
+        "product_data[name]": `AZ Innovations — ${planDef.name}`,
       });
       planDef.stripePriceId = price.id as string;
     }
@@ -1849,7 +1849,7 @@ async function startServer() {
       purchase_units: [
         {
           amount: { currency_code: "USD", value: String(planDef.priceUsd) },
-          description: `HyperCross Nexus — ${planDef.name} (Monthly)`,
+          description: `AZ Innovations — ${planDef.name} (Monthly)`,
           custom_id: `plan:${plan}:email:${email}`,
         },
       ],
@@ -1877,7 +1877,10 @@ async function startServer() {
       const provider = String(req.body?.provider ?? "").toLowerCase();
       const plan = String(req.body?.plan ?? "").toLowerCase() as PlanTier;
       const email = normalizeEmail(req.body?.email);
-      const baseUrl = `${process.env.OAUTH_REDIRECT_BASE || "http://localhost:3000"}`;
+      const baseUrl = process.env.HYPERCROSS_PUBLIC_URL
+        || process.env.RENDER_EXTERNAL_URL
+        || process.env.OAUTH_REDIRECT_BASE
+        || "http://localhost:3000";
 
       if (!email) return res.status(400).json({ error: "email is required" });
       if (plan !== "starter" && plan !== "pro" && plan !== "enterprise" && plan !== "enterprise_deluxe") {
