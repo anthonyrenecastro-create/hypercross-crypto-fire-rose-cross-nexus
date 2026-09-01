@@ -419,6 +419,31 @@ async function startServer() {
 
   ensureDefaultLinkedAccounts();
 
+  const TRIAL_PLAN = "trader";
+  const TRIAL_DAYS = 14;
+
+  // Grants every new email signup full-featured access for TRIAL_DAYS, no payment required.
+  function startTrialSubscription(email: string): void {
+    const custId = crypto.randomUUID();
+    queries.customers.upsert.run(custId, email, TRIAL_PLAN);
+    const customer = queries.customers.getByEmail.get(email) as any;
+
+    const now = new Date();
+    const trialEnd = new Date(now.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+    queries.subscriptions.upsertByEmail.run(
+      crypto.randomUUID(),
+      customer.id,
+      email,
+      "trial",
+      null,
+      TRIAL_PLAN,
+      "trialing",
+      now.toISOString(),
+      trialEnd.toISOString(),
+      JSON.stringify({ source: "signup_trial" })
+    );
+  }
+
   app.post("/api/auth/signup", (req, res) => {
     try {
       const method = req.body?.method === "phone" ? "phone" : "email";
@@ -443,6 +468,7 @@ async function startServer() {
         queries.organization.create.run(orgId, orgName, id, JSON.stringify({}));
         queries.organizationMember.add.run(crypto.randomUUID(), id, orgId, "OWNER");
         queries.authUser.touchLogin.run(id);
+        startTrialSubscription(email);
 
         const sessionId = createSessionToken();
         queries.session.create.run(sessionId, id, orgId, "OWNER", getSessionExpiration().toISOString());
