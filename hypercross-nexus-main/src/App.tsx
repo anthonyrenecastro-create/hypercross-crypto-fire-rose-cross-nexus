@@ -1526,9 +1526,9 @@ function PaymentSettingsPage({
 
   // Plan-tier availability matrix
   const PLAN_FEATURES: Record<PlanTier, PaymentProvider[]> = {
-    starter: ["paypal"],
-    pro: ["stripe", "paypal"],
-    enterprise: ["stripe", "paypal", "bank-link"],
+    starter: ["stripe"],
+    pro: ["stripe"],
+    enterprise: ["stripe", "bank-link"],
   };
 
   const allowedProviders = PLAN_FEATURES[plan] || [];
@@ -1883,7 +1883,7 @@ function PaywallScreen({ onSelectPlan }: { onSelectPlan: (plan: PlanTier) => voi
     {
       id: 'pro',
       label: 'Pro',
-      price: '$299/mo',
+      price: '$179.99/mo',
       summary: 'For active desks running multi-asset operations.',
       features: ['10 workspaces', 'Derivatives + copy trading', 'Priority support'],
       accent: 'from-[#ffae00] to-[#f97316]',

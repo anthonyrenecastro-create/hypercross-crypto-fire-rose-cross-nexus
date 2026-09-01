@@ -149,9 +149,9 @@ type PlanTier = "starter" | "pro" | "enterprise";
 
 // Plan-tier feature matrix: which payment providers are available per subscription tier
 const PLAN_PAYMENT_FEATURES: Record<PlanTier, PaymentProvider[]> = {
-  starter: ["paypal"],
-  pro: ["stripe", "paypal"],
-  enterprise: ["stripe", "paypal", "bank-link"],
+  starter: ["stripe"],
+  pro: ["stripe"],
+  enterprise: ["stripe", "bank-link"],
 };
 
 // Subscription plan definitions
@@ -168,7 +168,7 @@ const SUBSCRIPTION_PLANS: Record<
   },
   pro: {
     name: "Pro",
-    priceUsd: 299,
+    priceUsd: 179.99,
     interval: "month",
     stripePriceId: process.env.STRIPE_PRICE_PRO || null,
     paypalPlanId: process.env.PAYPAL_PLAN_PRO || null,

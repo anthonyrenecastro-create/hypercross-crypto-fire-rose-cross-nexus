@@ -20,19 +20,19 @@ const PLAN_DETAILS: Record<
     features: [
       "2 workspaces",
       "Core asset modules",
-      "PayPal payments",
+      "Stripe payments",
       "Email support",
     ],
   },
   pro: {
     name: "Pro",
-    price: "$299",
+    price: "$179.99",
     priceNote: "per month",
     color: "#f97316",
     features: [
       "10 workspaces",
       "Derivatives + copy trading",
-      "Stripe & PayPal payments",
+      "Stripe payments",
       "Priority support",
     ],
   },
@@ -67,7 +67,8 @@ export default function CheckoutPage({ plan, email, onBack, onSuccess }: Checkou
 
   const planDef = PLAN_DETAILS[plan];
   const isProOrStarter = plan === "starter" || plan === "pro";
-  const allowedProviders = plan === "starter" ? ["paypal"] : ["stripe", "paypal"];
+  // PayPal is temporarily omitted; Stripe is the only active provider for all plans.
+  const allowedProviders = ["stripe"];
 
   const handleCheckout = async () => {
     if (!isProOrStarter) return;
@@ -288,27 +289,29 @@ export default function CheckoutPage({ plan, email, onBack, onSuccess }: Checkou
                   </div>
                 )}
 
-                {/* PayPal option */}
-                <button
-                  onClick={() => setProvider("paypal")}
-                  className={`w-full flex items-start gap-4 rounded-xl border p-4 transition-all text-left ${
-                    provider === "paypal"
-                      ? "border-[#0070ba] bg-[#0070ba]/10"
-                      : "border-white/10 bg-white/5 hover:border-white/20"
-                  }`}
-                >
-                  <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${provider === "paypal" ? "border-[#0070ba]" : "border-white/30"}`}>
-                    {provider === "paypal" && <div className="h-2 w-2 rounded-full bg-[#0070ba]" />}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <CircleDollarSign className="h-4 w-4 text-[#0070ba]" />
-                      <span className="font-semibold text-white text-sm">PayPal</span>
-                      <Badge className="text-[10px] px-1.5 py-0 bg-[#0070ba]/20 text-[#5ebfff] border-0">PayPal Balance / Bank</Badge>
+                {/* PayPal option (temporarily disabled — omitted while PayPal credentials are pending) */}
+                {allowedProviders.includes("paypal") && (
+                  <button
+                    onClick={() => setProvider("paypal")}
+                    className={`w-full flex items-start gap-4 rounded-xl border p-4 transition-all text-left ${
+                      provider === "paypal"
+                        ? "border-[#0070ba] bg-[#0070ba]/10"
+                        : "border-white/10 bg-white/5 hover:border-white/20"
+                    }`}
+                  >
+                    <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${provider === "paypal" ? "border-[#0070ba]" : "border-white/30"}`}>
+                      {provider === "paypal" && <div className="h-2 w-2 rounded-full bg-[#0070ba]" />}
                     </div>
-                    <p className="text-xs text-white/45">Pay with your PayPal account, balance, or linked bank.</p>
-                  </div>
-                </button>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <CircleDollarSign className="h-4 w-4 text-[#0070ba]" />
+                        <span className="font-semibold text-white text-sm">PayPal</span>
+                        <Badge className="text-[10px] px-1.5 py-0 bg-[#0070ba]/20 text-[#5ebfff] border-0">PayPal Balance / Bank</Badge>
+                      </div>
+                      <p className="text-xs text-white/45">Pay with your PayPal account, balance, or linked bank.</p>
+                    </div>
+                  </button>
+                )}
 
                 {error && (
                   <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
