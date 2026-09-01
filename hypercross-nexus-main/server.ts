@@ -439,6 +439,7 @@ async function startServer() {
         const orgId = crypto.randomUUID();
         const orgName = `${email.split("@")[0]}'s workspace`;
         queries.authUser.create.run(id, email, null, hashPassword(password));
+        queries.user.create.run(id, email, null, null);
         queries.organization.create.run(orgId, orgName, id, JSON.stringify({}));
         queries.organizationMember.add.run(crypto.randomUUID(), id, orgId, "OWNER");
         queries.authUser.touchLogin.run(id);
@@ -457,6 +458,7 @@ async function startServer() {
       const orgId = crypto.randomUUID();
       const orgName = `${phone} workspace`;
       queries.authUser.create.run(id, null, phone, hashPassword(password));
+      queries.user.create.run(id, null, null, null);
       queries.organization.create.run(orgId, orgName, id, JSON.stringify({}));
       queries.organizationMember.add.run(crypto.randomUUID(), id, orgId, "OWNER");
       queries.authUser.touchLogin.run(id);
