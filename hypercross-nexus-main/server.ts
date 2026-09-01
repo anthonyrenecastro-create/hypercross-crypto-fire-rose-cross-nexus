@@ -223,6 +223,10 @@ async function startServer() {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+  // Render/Railway expose the live deployment URL via these env vars; auto-allow
+  // it so the app isn't broken by default before ALLOWED_ORIGINS is configured.
+  if (process.env.RENDER_EXTERNAL_URL) allowedOrigins.push(process.env.RENDER_EXTERNAL_URL);
+  if (process.env.HYPERCROSS_PUBLIC_URL) allowedOrigins.push(process.env.HYPERCROSS_PUBLIC_URL);
   app.use(cors({
     origin(origin, callback) {
       // Allow same-origin/non-browser requests (no Origin header, e.g. Electron/curl) and approved domains.
