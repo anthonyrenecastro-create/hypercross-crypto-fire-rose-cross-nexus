@@ -145,33 +145,43 @@ async function verifyPayPalWebhook(req: express.Request): Promise<{ ok: boolean;
 
 type AccountBalances = Record<string, number>;
 type PaymentProvider = "stripe" | "paypal" | "bank-link";
-type PlanTier = "starter" | "pro" | "enterprise";
+type PlanTier = "starter" | "pro" | "enterprise" | "enterprise_deluxe";
 
-// Plan-tier feature matrix: which payment providers are available per subscription tier
+// Plan-tier feature matrix: which payment providers can be linked per subscription tier.
 const PLAN_PAYMENT_FEATURES: Record<PlanTier, PaymentProvider[]> = {
   starter: ["stripe"],
   pro: ["stripe"],
-  enterprise: ["stripe", "bank-link"],
+  enterprise: ["stripe"],
+  enterprise_deluxe: ["bank-link"],
 };
 
-// Subscription plan definitions
+// Subscription plan definitions. Enterprise Deluxe is a custom, sales-assisted
+// engagement (onboarding + a bespoke app build) and is intentionally excluded
+// from self-serve Stripe checkout.
 const SUBSCRIPTION_PLANS: Record<
-  Exclude<PlanTier, "enterprise">,
+  Exclude<PlanTier, "enterprise_deluxe">,
   { name: string; priceUsd: number; interval: "month"; stripePriceId: string | null; paypalPlanId: string | null }
 > = {
   starter: {
     name: "Starter",
-    priceUsd: 29.99,
+    priceUsd: 24.99,
     interval: "month",
     stripePriceId: process.env.STRIPE_PRICE_STARTER || null,
     paypalPlanId: process.env.PAYPAL_PLAN_STARTER || null,
   },
   pro: {
     name: "Pro",
-    priceUsd: 179.99,
+    priceUsd: 54.99,
     interval: "month",
     stripePriceId: process.env.STRIPE_PRICE_PRO || null,
     paypalPlanId: process.env.PAYPAL_PLAN_PRO || null,
+  },
+  enterprise: {
+    name: "Enterprise",
+    priceUsd: 99.99,
+    interval: "month",
+    stripePriceId: process.env.STRIPE_PRICE_ENTERPRISE || null,
+    paypalPlanId: process.env.PAYPAL_PLAN_ENTERPRISE || null,
   },
 };
 
@@ -1723,7 +1733,7 @@ async function startServer() {
   }
 
   async function stripeCreateCheckoutSession(
-    plan: Exclude<PlanTier, "enterprise">,
+    plan: Exclude<PlanTier, "enterprise_deluxe">,
     email: string,
     stripeCustomerId: string,
     successUrl: string,
@@ -1824,7 +1834,7 @@ async function startServer() {
   }
 
   async function paypalCreateOrder(
-    plan: Exclude<PlanTier, "enterprise">,
+    plan: Exclude<PlanTier, "enterprise_deluxe">,
     email: string,
     returnUrl: string,
     cancelUrl: string
@@ -1857,7 +1867,7 @@ async function startServer() {
 
   // ─── Checkout & Subscription Routes ────────────────────────────────────────
 
-  // Create Stripe or PayPal checkout session
+  // Create a Stripe checkout session for self-serve subscription plans.
   app.post("/api/checkout/session", async (req, res) => {
     try {
       const provider = String(req.body?.provider ?? "").toLowerCase();
@@ -1866,11 +1876,14 @@ async function startServer() {
       const baseUrl = `${process.env.OAUTH_REDIRECT_BASE || "http://localhost:3000"}`;
 
       if (!email) return res.status(400).json({ error: "email is required" });
-      if (plan === "enterprise") {
-        return res.status(400).json({ error: "Enterprise plan requires contacting sales." });
+      if (plan === "enterprise_deluxe") {
+        return res.status(400).json({ error: "Enterprise Deluxe requires contacting sales." });
       }
-      if (plan !== "starter" && plan !== "pro") {
-        return res.status(400).json({ error: "plan must be starter, pro, or enterprise" });
+      if (plan !== "starter" && plan !== "pro" && plan !== "enterprise") {
+        return res.status(400).json({ error: "plan must be starter, pro, enterprise, or enterprise_deluxe" });
+      }
+      if (provider !== "stripe") {
+        return res.status(400).json({ error: "Stripe is the only available checkout provider." });
       }
 
       // Ensure customer record exists
@@ -1895,7 +1908,7 @@ async function startServer() {
         const priorSubscriptions = queries.subscriptions.listByEmail.all(email) as any[];
         const trialDays = priorSubscriptions.length === 0 ? 14 : 0;
         const session = await stripeCreateCheckoutSession(
-          plan as Exclude<PlanTier, "enterprise">,
+          plan as Exclude<PlanTier, "enterprise_deluxe">,
           email,
           stripeCustomerId,
           successUrl,
@@ -1905,20 +1918,6 @@ async function startServer() {
 
         return res.json({ provider: "stripe", sessionId: session.id, url: session.url });
 
-      } else if (provider === "paypal") {
-        const returnUrl = `${baseUrl}/?checkout=paypal-return&plan=${plan}&email=${encodeURIComponent(email)}`;
-        const cancelUrl = `${baseUrl}/?checkout=canceled&plan=${plan}`;
-        const order = await paypalCreateOrder(
-          plan as Exclude<PlanTier, "enterprise">,
-          email,
-          returnUrl,
-          cancelUrl
-        );
-
-        return res.json({ provider: "paypal", orderId: order.id, url: order.approvalUrl });
-
-      } else {
-        return res.status(400).json({ error: "provider must be stripe or paypal" });
       }
     } catch (err: any) {
       console.error("[checkout/session]", err?.message);

@@ -127,7 +127,7 @@ interface PaymentConnection {
   updatedAt: string | null;
 }
 
-type PlanTier = 'starter' | 'pro' | 'enterprise';
+type PlanTier = 'starter' | 'pro' | 'enterprise' | 'enterprise_deluxe';
 
 export default function App() {
   const [data, setData] = useState<ChainstackStatusData | null>(null);
@@ -277,7 +277,7 @@ export default function App() {
   useEffect(() => {
     // Load saved plan from localStorage
     const saved = window.localStorage.getItem('hcx-plan-tier') as PlanTier | null;
-    if (saved === 'starter' || saved === 'pro' || saved === 'enterprise') {
+    if (saved === 'starter' || saved === 'pro' || saved === 'enterprise' || saved === 'enterprise_deluxe') {
       setSelectedPlan(saved);
     }
 
@@ -1516,7 +1516,6 @@ function PaymentSettingsPage({
   onInitiatePlaid?: () => Promise<void>;
 }) {
   const [stripeAccountRef, setStripeAccountRef] = useState("");
-  const [paypalAccountRef, setPaypalAccountRef] = useState("");
   const [bankAccountRef, setBankAccountRef] = useState("");
   const [bankName, setBankName] = useState("");
   const [bankLast4, setBankLast4] = useState("");
@@ -1529,17 +1528,16 @@ function PaymentSettingsPage({
     starter: ["stripe"],
     pro: ["stripe"],
     enterprise: ["stripe", "bank-link"],
+    enterprise_deluxe: ["bank-link"],
   };
 
   const allowedProviders = PLAN_FEATURES[plan] || [];
   const byProvider = new Map(connections.map((conn) => [conn.provider, conn]));
 
   const stripe = byProvider.get("stripe");
-  const paypal = byProvider.get("paypal");
   const bank = byProvider.get("bank-link");
 
   const isStripeAllowed = allowedProviders.includes("stripe");
-  const isPayPalAllowed = allowedProviders.includes("paypal");
   const isBankAllowed = allowedProviders.includes("bank-link");
 
   const handleConnect = async (provider: PaymentProvider, accountRef: string, metadata: Record<string, any>) => {
@@ -1600,7 +1598,7 @@ function PaymentSettingsPage({
         <div>
           <h2 className="text-2xl font-bold text-white">Payment Integrations</h2>
           <p className="text-white/55 mt-1">
-            Link Stripe, PayPal, and bank-link rails for subscriptions and payouts.
+            Link Stripe and bank-link rails for subscriptions and payouts.
             {plan !== 'enterprise' && (
               <span className="block text-xs mt-1 text-yellow-400">
                 📦 Current Plan: <span className="capitalize">{plan}</span> 
@@ -1632,7 +1630,7 @@ function PaymentSettingsPage({
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Stripe Card */}
         <Card className={`glass-panel border-white/10 ${!isStripeAllowed ? 'opacity-60 scale-98' : ''}`}>
           <CardHeader>
@@ -1705,63 +1703,6 @@ function PaymentSettingsPage({
                 </Button>
               </>
             )}
-          </CardFooter>
-        </Card>
-
-        {/* PayPal Card */}
-        <Card className="glass-panel border-white/10">
-          <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2"><CircleDollarSign className="h-4 w-4 text-[#0070ba]" />PayPal</CardTitle>
-            <CardDescription className="text-white/50">Connect PayPal merchant payments for checkout.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {useOAuth ? (
-              <div className="text-sm text-white/70">
-                <p className="mb-2">Click below to authorize via PayPal Partner OAuth:</p>
-              </div>
-            ) : (
-              <>
-                <Label className="text-white/70">Merchant ID / Client ID</Label>
-                <Input
-                  value={paypalAccountRef}
-                  onChange={(e) => setPaypalAccountRef(e.target.value)}
-                  placeholder="PAYPAL-MERCHANT-ID"
-                  className="bg-white/5 border-white/10 text-white"
-                  disabled={loading || busyProvider === "paypal"}
-                />
-              </>
-            )}
-            <div className="text-xs text-white/50">
-              Status: <span className={paypal?.status === "connected" ? "text-green-400 font-semibold" : "text-white/40"}>{paypal?.status ?? "disconnected"}</span>
-            </div>
-            {paypal?.accountRef && <p className="text-xs text-white/45">Linked as {paypal.accountRef}</p>}
-          </CardContent>
-          <CardFooter className="flex gap-2">
-            {useOAuth ? (
-              <Button
-                className="flex-1 bg-[#0070ba] hover:bg-[#005c99]"
-                disabled={loading || busyProvider === "paypal"}
-                onClick={() => void handleOAuthInitiate("paypal")}
-              >
-                {busyProvider === "paypal" ? "Authorizing..." : "Authorize with PayPal"}
-              </Button>
-            ) : (
-              <Button
-                className="flex-1 bg-[#0070ba] hover:bg-[#005c99]"
-                disabled={loading || busyProvider === "paypal" || !paypalAccountRef.trim()}
-                onClick={() => void handleConnect("paypal", paypalAccountRef.trim(), { platform: "paypal" })}
-              >
-                {busyProvider === "paypal" ? "Linking..." : "Link PayPal"}
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              className="border-white/20 text-white/70"
-              disabled={loading || busyProvider === "paypal"}
-              onClick={() => void handleDisconnect("paypal")}
-            >
-              Unlink
-            </Button>
           </CardFooter>
         </Card>
 
@@ -1875,7 +1816,7 @@ function PaywallScreen({ onSelectPlan }: { onSelectPlan: (plan: PlanTier) => voi
     {
       id: 'starter',
       label: 'Starter',
-      price: '$29.99/mo',
+      price: '$24.99/mo',
       summary: 'For solo operators validating a market strategy.',
       features: ['2 workspaces', 'Core asset modules', 'Email support'],
       accent: 'from-[#0ea5e9] to-[#0284c7]',
@@ -1883,7 +1824,7 @@ function PaywallScreen({ onSelectPlan }: { onSelectPlan: (plan: PlanTier) => voi
     {
       id: 'pro',
       label: 'Pro',
-      price: '$179.99/mo',
+      price: '$54.99/mo',
       summary: 'For active desks running multi-asset operations.',
       features: ['10 workspaces', 'Derivatives + copy trading', 'Priority support'],
       accent: 'from-[#ffae00] to-[#f97316]',
@@ -1891,10 +1832,18 @@ function PaywallScreen({ onSelectPlan }: { onSelectPlan: (plan: PlanTier) => voi
     {
       id: 'enterprise',
       label: 'Enterprise',
-      price: 'Custom',
+      price: '$99.99/mo',
       summary: 'For institutions requiring governance and dedicated infra.',
       features: ['Unlimited workspaces', 'SLA + dedicated onboarding', 'White-label deployment'],
       accent: 'from-[#c300ff] to-[#7e22ce]',
+    },
+    {
+      id: 'enterprise_deluxe',
+      label: 'Enterprise Deluxe',
+      price: 'Starting at $999',
+      summary: 'A fully custom engagement with a bespoke app build.',
+      features: ['Everything in Enterprise', 'White-glove onboarding', '5 bonus features, custom-selected for you', 'Custom app by Axiom Zeta Innovations'],
+      accent: 'from-[#facc15] to-[#c300ff]',
     },
   ];
 
@@ -1911,7 +1860,7 @@ function PaywallScreen({ onSelectPlan }: { onSelectPlan: (plan: PlanTier) => voi
           <p className="text-white/55 mt-3 max-w-2xl mx-auto">Select a subscription plan to unlock platform modules and continue to the dashboard.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {tiers.map((tier) => (
             <div key={tier.id} className="rounded-2xl border border-white/10 bg-black/55 backdrop-blur-xl p-6 flex flex-col">
               <div className={`h-1.5 w-20 rounded-full bg-gradient-to-r ${tier.accent} mb-6`} />

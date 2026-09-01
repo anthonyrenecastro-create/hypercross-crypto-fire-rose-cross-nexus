@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { CreditCard, CircleDollarSign, ArrowLeft, Shield, CheckCircle2, Loader2, Mail } from "lucide-react";
+import { CreditCard, ArrowLeft, Shield, CheckCircle2, Loader2, Mail } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
-type PlanTier = "starter" | "pro" | "enterprise";
+type PlanTier = "starter" | "pro" | "enterprise" | "enterprise_deluxe";
 
 const PLAN_DETAILS: Record<
   PlanTier,
@@ -14,7 +14,7 @@ const PLAN_DETAILS: Record<
 > = {
   starter: {
     name: "Starter",
-    price: "$29.99",
+    price: "$24.99",
     priceNote: "per month",
     color: "#0ea5e9",
     features: [
@@ -26,7 +26,7 @@ const PLAN_DETAILS: Record<
   },
   pro: {
     name: "Pro",
-    price: "$179.99",
+    price: "$54.99",
     priceNote: "per month",
     color: "#f97316",
     features: [
@@ -38,14 +38,26 @@ const PLAN_DETAILS: Record<
   },
   enterprise: {
     name: "Enterprise",
-    price: "Custom",
-    priceNote: "contact sales",
+    price: "$99.99",
+    priceNote: "per month",
     color: "#c300ff",
     features: [
       "Unlimited workspaces",
-      "All payment rails incl. bank link",
+      "Stripe + bank-link payments",
       "SLA + dedicated onboarding",
       "White-label deployment",
+    ],
+  },
+  enterprise_deluxe: {
+    name: "Enterprise Deluxe",
+    price: "Starting at $999",
+    priceNote: "contact sales",
+    color: "#facc15",
+    features: [
+      "Everything in Enterprise",
+      "White-glove onboarding",
+      "5 bonus features, custom-selected for your business",
+      "Custom app build by Axiom Zeta Innovations",
     ],
   },
 };
@@ -58,7 +70,7 @@ interface CheckoutPageProps {
 }
 
 export default function CheckoutPage({ plan, email, onBack, onSuccess }: CheckoutPageProps) {
-  const [provider, setProvider] = useState<"stripe" | "paypal">("stripe");
+  const provider = "stripe";
   const [contactName, setContactName] = useState("");
   const [contactMessage, setContactMessage] = useState("");
   const [contactSent, setContactSent] = useState(false);
@@ -66,12 +78,12 @@ export default function CheckoutPage({ plan, email, onBack, onSuccess }: Checkou
   const [error, setError] = useState<string | null>(null);
 
   const planDef = PLAN_DETAILS[plan];
-  const isProOrStarter = plan === "starter" || plan === "pro";
-  // PayPal is temporarily omitted; Stripe is the only active provider for all plans.
+  const isBillablePlan = plan === "starter" || plan === "pro" || plan === "enterprise";
+  // Stripe is the only active provider for all self-serve plans.
   const allowedProviders = ["stripe"];
 
   const handleCheckout = async () => {
-    if (!isProOrStarter) return;
+    if (!isBillablePlan) return;
     setLoading(true);
     setError(null);
     try {
@@ -103,7 +115,7 @@ export default function CheckoutPage({ plan, email, onBack, onSuccess }: Checkou
     setContactSent(true);
   };
 
-  if (plan === "enterprise") {
+  if (plan === "enterprise_deluxe") {
     return (
       <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-6">
         <div className="absolute inset-0 pointer-events-none">
@@ -120,7 +132,7 @@ export default function CheckoutPage({ plan, email, onBack, onSuccess }: Checkou
                 <div className="h-1 w-16 rounded-full mb-4" style={{ background: `linear-gradient(to right, ${planDef.color}, #7e22ce)` }} />
                 <CardTitle className="text-white text-2xl">Contact Sales</CardTitle>
                 <CardDescription className="text-white/55">
-                  Tell us about your use case and we'll tailor an Enterprise engagement.
+                  Tell us about your use case and we'll tailor an Enterprise Deluxe engagement.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -228,13 +240,13 @@ export default function CheckoutPage({ plan, email, onBack, onSuccess }: Checkou
                   </div>
                   <div className="flex justify-between text-sm font-semibold text-white border-t border-white/10 pt-2 mt-2">
                     <span>Total due today</span>
-                    <span>{planDef.price}</span>
+                    <span>$0.00</span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 text-xs text-white/35 mt-2">
                   <Shield className="h-3.5 w-3.5" />
-                  <span>Payments secured via Stripe or PayPal. Cancel anytime.</span>
+                  <span>Card required. Your 14-day trial starts today; cancel anytime before billing.</span>
                 </div>
               </CardContent>
             </Card>
@@ -252,14 +264,7 @@ export default function CheckoutPage({ plan, email, onBack, onSuccess }: Checkou
               <CardContent className="space-y-3">
                 {/* Stripe option */}
                 {allowedProviders.includes("stripe") && (
-                  <button
-                    onClick={() => setProvider("stripe")}
-                    className={`w-full flex items-start gap-4 rounded-xl border p-4 transition-all text-left ${
-                      provider === "stripe"
-                        ? "border-[#635bff] bg-[#635bff]/10"
-                        : "border-white/10 bg-white/5 hover:border-white/20"
-                    }`}
-                  >
+                  <div className="w-full flex items-start gap-4 rounded-xl border border-[#635bff] bg-[#635bff]/10 p-4">
                     <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${provider === "stripe" ? "border-[#635bff]" : "border-white/30"}`}>
                       {provider === "stripe" && <div className="h-2 w-2 rounded-full bg-[#635bff]" />}
                     </div>
@@ -271,46 +276,7 @@ export default function CheckoutPage({ plan, email, onBack, onSuccess }: Checkou
                       </div>
                       <p className="text-xs text-white/45">Visa, Mastercard, Amex, and more. Powered by Stripe Checkout.</p>
                     </div>
-                  </button>
-                )}
-
-                {/* Starter: Stripe not available */}
-                {!allowedProviders.includes("stripe") && (
-                  <div className="w-full flex items-start gap-4 rounded-xl border border-white/5 bg-white/3 p-4 opacity-50 cursor-not-allowed">
-                    <div className="mt-0.5 h-4 w-4 rounded-full border-2 border-white/20 flex-shrink-0" />
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <CreditCard className="h-4 w-4 text-white/30" />
-                        <span className="font-semibold text-white/30 text-sm">Stripe</span>
-                        <Badge className="text-[10px] px-1.5 py-0 bg-yellow-500/20 text-yellow-400 border-0">Pro+ Only</Badge>
-                      </div>
-                      <p className="text-xs text-white/30">Upgrade to Pro to enable Stripe card payments.</p>
-                    </div>
                   </div>
-                )}
-
-                {/* PayPal option (temporarily disabled — omitted while PayPal credentials are pending) */}
-                {allowedProviders.includes("paypal") && (
-                  <button
-                    onClick={() => setProvider("paypal")}
-                    className={`w-full flex items-start gap-4 rounded-xl border p-4 transition-all text-left ${
-                      provider === "paypal"
-                        ? "border-[#0070ba] bg-[#0070ba]/10"
-                        : "border-white/10 bg-white/5 hover:border-white/20"
-                    }`}
-                  >
-                    <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${provider === "paypal" ? "border-[#0070ba]" : "border-white/30"}`}>
-                      {provider === "paypal" && <div className="h-2 w-2 rounded-full bg-[#0070ba]" />}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <CircleDollarSign className="h-4 w-4 text-[#0070ba]" />
-                        <span className="font-semibold text-white text-sm">PayPal</span>
-                        <Badge className="text-[10px] px-1.5 py-0 bg-[#0070ba]/20 text-[#5ebfff] border-0">PayPal Balance / Bank</Badge>
-                      </div>
-                      <p className="text-xs text-white/45">Pay with your PayPal account, balance, or linked bank.</p>
-                    </div>
-                  </button>
                 )}
 
                 {error && (
@@ -322,11 +288,7 @@ export default function CheckoutPage({ plan, email, onBack, onSuccess }: Checkou
               <CardFooter className="flex-col gap-3">
                 <Button
                   className="w-full h-12 text-base font-semibold"
-                  style={
-                    provider === "stripe"
-                      ? { background: "linear-gradient(135deg, #635bff, #4f46e5)" }
-                      : { background: "linear-gradient(135deg, #0070ba, #005c99)" }
-                  }
+                  style={{ background: "linear-gradient(135deg, #635bff, #4f46e5)" }}
                   disabled={loading}
                   onClick={handleCheckout}
                 >
@@ -335,20 +297,15 @@ export default function CheckoutPage({ plan, email, onBack, onSuccess }: Checkou
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Redirecting…
                     </>
-                  ) : provider === "stripe" ? (
-                    <>
-                      <CreditCard className="h-4 w-4 mr-2" />
-                      Pay with Stripe →
-                    </>
                   ) : (
                     <>
-                      <CircleDollarSign className="h-4 w-4 mr-2" />
-                      Pay with PayPal →
+                      <CreditCard className="h-4 w-4 mr-2" />
+                      Start 14-Day Free Trial →
                     </>
                   )}
                 </Button>
                 <p className="text-xs text-white/30 text-center">
-                  You'll be redirected to {provider === "stripe" ? "Stripe's secure checkout" : "PayPal"} to complete payment.
+                  You'll be redirected to Stripe's secure checkout to add your card.
                   After payment, you'll be brought back to your dashboard.
                 </p>
               </CardFooter>

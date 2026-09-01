@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
-type PlanTier = "starter" | "pro" | "enterprise";
+type PlanTier = "starter" | "pro" | "enterprise" | "enterprise_deluxe";
 
 const PLAN_DETAILS: Record<PlanTier, { name: string; price: string; color: string }> = {
-  starter: { name: "Starter", price: "$29.99/mo", color: "#0ea5e9" },
-  pro: { name: "Pro", price: "$179.99/mo", color: "#f97316" },
-  enterprise: { name: "Enterprise", price: "Custom", color: "#c300ff" },
+  starter: { name: "Starter", price: "$24.99/mo", color: "#0ea5e9" },
+  pro: { name: "Pro", price: "$54.99/mo", color: "#f97316" },
+  enterprise: { name: "Enterprise", price: "$99.99/mo", color: "#c300ff" },
+  enterprise_deluxe: { name: "Enterprise Deluxe", price: "Starting at $999", color: "#facc15" },
 };
 
 interface Subscription {
