@@ -83,6 +83,7 @@ interface ChainstackStatusData {
   chaosLevel: string;
   damping: string;
   syncStatus: string;
+  networkHealth: "OPTIMAL" | "DEGRADED" | "OFFLINE";
   recentBlocks: Array<{
     id: string;
     timestamp: string;
@@ -462,11 +463,16 @@ export default function App() {
         const response = await fetch("/api/blockchain/status");
         const result = await response.json().catch(() => null);
         const connected = response.ok && result?.connected === true;
+        const rpcHealthy = result?.rpcHealthy === true;
+        const networkHealth = response.ok
+          ? (connected && rpcHealthy ? "OPTIMAL" : "DEGRADED")
+          : "OFFLINE";
         setData({
           nodeState: result?.network ?? "unknown",
           chaosLevel: result?.live ? "Live" : "Degraded",
           damping: result?.blockNumber != null ? String(result.blockNumber) : "—",
           syncStatus: connected ? "Synced" : "Disconnected",
+          networkHealth,
           recentBlocks: [],
           chartData: [],
         });
@@ -477,6 +483,7 @@ export default function App() {
           chaosLevel: "Degraded",
           damping: "—",
           syncStatus: "Disconnected",
+          networkHealth: "OFFLINE",
           recentBlocks: [],
           chartData: [],
         });
@@ -590,10 +597,16 @@ export default function App() {
         <header className="h-20 flex-shrink-0 border-b border-white/10 glass-panel flex items-center justify-between px-8 z-10">
           <div className="flex items-center gap-3">
             <div className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]"></span>
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${
+                data?.networkHealth === "OPTIMAL" ? "bg-green-400" : data?.networkHealth === "DEGRADED" ? "bg-yellow-400" : "bg-red-400"
+              } opacity-75`}></span>
+              <span className={`relative inline-flex rounded-full h-3 w-3 ${
+                data?.networkHealth === "OPTIMAL" ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]" : data?.networkHealth === "DEGRADED" ? "bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.8)]" : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"
+              }`}></span>
             </div>
-            <span className="text-sm font-medium text-white/80 tracking-wide uppercase">Network Health: Optimal</span>
+            <span className="text-sm font-medium text-white/80 tracking-wide uppercase">
+              Network Health: {data?.networkHealth ?? "OFFLINE"}
+            </span>
           </div>
           <div className="flex items-center gap-4">
             <Button variant="ghost" className="text-white/60 hover:text-white hover:bg-white/10" onClick={() => setIsLoggedIn(false)}>

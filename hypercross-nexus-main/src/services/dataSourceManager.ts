@@ -120,24 +120,40 @@ class DataSourceManager {
     }, {});
   }
 
+  private isDemoDataAllowed(): boolean {
+    const appMode = process.env.APP_DATA_MODE || "demo";
+    if (appMode === "live") return false;
+    const allowDemo = process.env.ALLOW_DEMO_DATA;
+    return this.envFlagEnabled(allowDemo);
+  }
+
   // ── DIGITAL ASSETS ──
   async getAssets(channel: string = 'default-channel'): Promise<any[]> {
     try {
-      return this.getDemoAssets(channel);
+      if (this.isDemoDataAllowed()) {
+        return this.getDemoAssets(channel);
+      }
+      // Return real assets from database
+      const { queries } = await import('../../src/db/index.js');
+      const dbAssets = queries.assets.getByOrg.all('local-desktop-org') || [];
+      return dbAssets;
     } catch (err) {
       console.error('Failed to fetch assets:', err);
-      if (this.liveStrictMode) throw err;
-      return this.getDemoAssets(channel);
+      throw new Error("Live asset service unavailable. No production data is being substituted.");
     }
   }
 
   async getAssetBySymbol(symbol: string, channel: string = 'default-channel'): Promise<any> {
     try {
-      return this.getDemoAssets(channel).find((asset) => asset.symbol === symbol) ?? null;
+      if (this.isDemoDataAllowed()) {
+        return this.getDemoAssets(channel).find((asset) => asset.symbol === symbol) ?? null;
+      }
+      const { queries } = await import('../../src/db/index.js');
+      const dbAssets = queries.assets.getByOrg.all('local-desktop-org') || [];
+      return dbAssets.find((asset: any) => asset.symbol === symbol) ?? null;
     } catch (err) {
       console.error('Failed to fetch asset:', err);
-      if (this.liveStrictMode) throw err;
-      return this.getDemoAssets(channel).find((asset) => asset.symbol === symbol) ?? null;
+      throw new Error(`Failed to fetch asset for symbol: ${symbol}`);
     }
   }
 
@@ -145,7 +161,12 @@ class DataSourceManager {
   async getMarketPrices(symbols: string[]): Promise<MarketPriceMap> {
     try {
       const coingecko = this.httpClients.get('coingecko');
-      if (!coingecko) return this.getDemoMarketPrices(symbols);
+      if (!coingecko) {
+        if (this.isDemoDataAllowed()) {
+          return this.getDemoMarketPrices(symbols);
+        }
+        throw new Error("Real market data feed is unavailable (CoinGecko provider not found).");
+      }
 
       const ids = symbols.map(s => s.toLowerCase()).join(',');
       const res = await coingecko.get('/simple/price', {
@@ -160,8 +181,10 @@ class DataSourceManager {
       return res.data;
     } catch (err) {
       console.error('Failed to fetch market prices:', err);
-      if (this.liveStrictMode) throw err;
-      return this.getDemoMarketPrices(symbols);
+      if (this.isDemoDataAllowed()) {
+        return this.getDemoMarketPrices(symbols);
+      }
+      throw new Error("Failed to fetch real market data. Demo fallback is disabled in live mode.");
     }
   }
 
@@ -184,44 +207,52 @@ class DataSourceManager {
   // ── SPORTS DATA ──
   async getLiveSportsEvents(): Promise<any[]> {
     try {
+      if (!this.isDemoDataAllowed()) {
+        throw new Error("Sports stats are simulated. Set ALLOW_DEMO_DATA=true to use simulated data.");
+      }
       return this.getDemoSportsEvents();
     } catch (err) {
       console.error('Failed to fetch sports events:', err);
-      if (this.liveStrictMode) throw err;
-      return this.getDemoSportsEvents();
+      throw err;
     }
   }
 
   // ── MINING ──
   async getMiningPoolStats(): Promise<any[]> {
     try {
+      if (!this.isDemoDataAllowed()) {
+        throw new Error("Mining stats are simulated. Set ALLOW_DEMO_DATA=true to use simulated data.");
+      }
       return this.getDemoMiningPools();
     } catch (err) {
       console.error('Failed to fetch mining stats:', err);
-      if (this.liveStrictMode) throw err;
-      return this.getDemoMiningPools();
+      throw err;
     }
   }
 
   // ── RWA ──
   async getRWAssets(channel: string = 'rwa-channel'): Promise<any[]> {
     try {
+      if (!this.isDemoDataAllowed()) {
+        throw new Error("RWA features are simulated in this build. Set ALLOW_DEMO_DATA=true to use simulated data.");
+      }
       return this.getDemoRWAs();
     } catch (err) {
       console.error('Failed to fetch RWAs:', err);
-      if (this.liveStrictMode) throw err;
-      return this.getDemoRWAs();
+      throw err;
     }
   }
 
   // ── NFT ──
   async getNFTs(channel: string = 'nft-channel'): Promise<any[]> {
     try {
+      if (!this.isDemoDataAllowed()) {
+        throw new Error("NFT listings are simulated in this build. Set ALLOW_DEMO_DATA=true to use simulated data.");
+      }
       return this.getDemoNFTs();
     } catch (err) {
       console.error('Failed to fetch NFTs:', err);
-      if (this.liveStrictMode) throw err;
-      return this.getDemoNFTs();
+      throw err;
     }
   }
 }

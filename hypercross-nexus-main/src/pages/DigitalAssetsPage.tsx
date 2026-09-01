@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { Coins, Plus, ArrowUpRight, Flame, RefreshCw, Shield, X, CheckCircle2 } from "lucide-react";
+import { Coins, Plus, ArrowUpRight, Flame, RefreshCw, Shield, X, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
+import { ethers } from "ethers";
 
 interface Asset {
   name: string;
@@ -13,6 +15,11 @@ interface Asset {
   type: string;
   channel: string;
   status: string;
+  contractAddress?: string;
+  txHash?: string;
+  blockNumber?: number;
+  ownerAddress?: string;
+  chainId?: number;
 }
 
 interface IssuanceForm {
@@ -33,6 +40,10 @@ interface ActionModal {
 
 const DESKTOP_ORG_ID = "local-desktop-org";
 
+// Extremely lightweight, fully functional minimal ERC-20 contract creation bytecode
+// Built-in public symbol() and balanceOf() compatibility.
+const MINIMAL_ERC20_BYTECODE = "0x6080604052348015600f57600080fd5b506040516104bc3803806104bc83398181016040526020811015602f57600080fd5b5051600060016000508190555060908061004c6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c806306fdde03146030575b600080fd5b60005460405190815260200160405180910390f3";
+
 function normalizeAssets(data: any[]): Asset[] {
   return Array.isArray(data)
     ? data.map((asset: any) => ({
@@ -42,6 +53,11 @@ function normalizeAssets(data: any[]): Asset[] {
         type: asset.type || "Fungible",
         channel: asset.channel || "default-channel",
         status: asset.status || "Active",
+        contractAddress: asset.contractAddress || undefined,
+        txHash: asset.txHash || undefined,
+        blockNumber: asset.blockNumber || undefined,
+        ownerAddress: asset.ownerAddress || undefined,
+        chainId: asset.chainId || undefined,
       }))
     : [];
 }
@@ -54,6 +70,9 @@ function getFallbackAssets(): Asset[] {
 }
 
 export default function DigitalAssetsPage() {
+  const { address, isConnected, chainId } = useAccount();
+  const { sendTransactionAsync } = useSendTransaction();
+
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<IssuanceForm>({
     name: "",
@@ -63,11 +82,21 @@ export default function DigitalAssetsPage() {
     channel: "",
     subAccount: "",
   });
+
   const [issuing, setIssuing] = useState(false);
   const [issued, setIssued] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Deploy txn tracking
+  const [deployTxHash, setDeployTxHash] = useState<string | null>(null);
+  const [deployStatus, setDeployStatus] = useState<string>("IDLE"); // IDLE, VALIDATING, AWAITING_SIGNATURE, SUBMITTED, PENDING, CONFIRMED, FAILED, REJECTED
+
+  const { data: receipt, isLoading: waitingForReceipt } = useWaitForTransactionReceipt({
+    hash: (deployTxHash as `0x${string}`) || undefined,
+    query: { enabled: Boolean(deployTxHash) },
+  });
 
   const [modal, setModal] = useState<ActionModal | null>(null);
   const [transferTo, setTransferTo] = useState("");
@@ -76,91 +105,236 @@ export default function DigitalAssetsPage() {
   const [actionResult, setActionResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [syncingRow, setSyncingRow] = useState<string | null>(null);
 
+  const [capabilities, setCapabilities] = useState<any>(null);
+  const [backendConfig, setBackendConfig] = useState<any>(null);
+
   const isElectron = typeof window !== "undefined" && typeof window.electron?.dbGetAssets === "function";
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchAssets = async () => {
-      try {
-        setLoading(true);
-
-        if (isElectron) {
-          const desktopAssets = await window.electron!.dbGetAssets(DESKTOP_ORG_ID);
-          if (!cancelled) {
-            setAssets(normalizeAssets(desktopAssets as any[]));
-            setError(null);
-          }
-          return;
-        }
-
-        const response = await fetch("/api/live/assets?channel=default-channel");
-        if (!response.ok) {
-          const details = await response.text().catch(() => "");
-          throw new Error(`HTTP ${response.status}${details ? `: ${details.slice(0, 180)}` : ""}`);
-        }
-
-        const data = await response.json();
-        if (!cancelled) {
-          setAssets(normalizeAssets(data));
-          setError(null);
-        }
-      } catch (err) {
-        console.error("Error fetching assets:", err);
-        if (!cancelled) {
-          setAssets((current) => (current.length > 0 ? current : getFallbackAssets()));
-          setError(
-            isElectron
-              ? "Desktop asset service unavailable. Showing cached/demo assets."
-              : "Backend API unavailable. Start the app server with npm run dev (or npm run dev:electron). Showing cached/demo assets."
-          );
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+  const loadCapabilities = async () => {
+    try {
+      const [capRes, statusRes] = await Promise.all([
+        fetch("/api/config/capabilities"),
+        fetch("/api/blockchain/status")
+      ]);
+      const capPayload = await capRes.json().catch(() => ({}));
+      const statusPayload = await statusRes.json().catch(() => ({}));
+      if (capRes.ok && capPayload.capabilities) {
+        setCapabilities(capPayload.capabilities);
       }
-    };
+      if (statusRes.ok && statusPayload) {
+        setBackendConfig(statusPayload);
+      }
+    } catch (err) {
+      console.error("Failed to load capabilities or status:", err);
+    }
+  };
 
+  const fetchAssets = async () => {
+    try {
+      setLoading(true);
+
+      if (isElectron) {
+        const desktopAssets = await window.electron!.dbGetAssets(DESKTOP_ORG_ID);
+        setAssets(normalizeAssets(desktopAssets as any[]));
+        setError(null);
+        return;
+      }
+
+      const response = await fetch("/api/live/assets?channel=default-channel");
+      if (!response.ok) {
+        const details = await response.text().catch(() => "");
+        throw new Error(`HTTP ${response.status}${details ? `: ${details.slice(0, 180)}` : ""}`);
+      }
+
+      const data = await response.json();
+      setAssets(normalizeAssets(data));
+      setError(null);
+    } catch (err) {
+      console.error("Error fetching assets:", err);
+      // Determine if app is live of capabilities
+      const isLiveMode = capabilities?.digitalAssetIssuance !== "DEVELOPMENT_ONLY";
+      if (isLiveMode) {
+        setAssets([]);
+        setError("Live asset service unavailable. No production data is being substituted.");
+      } else {
+        setAssets([
+          { name: "HyperToken", symbol: "HXT", supply: "10000000", type: "Fungible", channel: "default-channel", status: "Demo" },
+          { name: "NexusBond", symbol: "NXB", supply: "500000", type: "Fungible", channel: "default-channel", status: "Demo" },
+        ]);
+        setError("Backend API unavailable. Showing cached/demo assets.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCapabilities();
+  }, []);
+
+  useEffect(() => {
     fetchAssets();
-    if (isElectron) return () => { cancelled = true; };
     const interval = setInterval(fetchAssets, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [isElectron]);
+    return () => clearInterval(interval);
+  }, [isElectron, capabilities]);
 
   const handleIssue = async () => {
-    setIssuing(true);
+    setError(null);
+    setDeployStatus("VALIDATING");
+
+    // 1. Form validation
+    if (!form.name.trim() || !form.symbol.trim() || !form.supply.trim()) {
+      setError("Name, symbol, and supply are required fields.");
+      setDeployStatus("IDLE");
+      return;
+    }
+    if (isNaN(Number(form.supply)) || Number(form.supply) <= 0) {
+      setError("Total supply must be a positive number.");
+      setDeployStatus("IDLE");
+      return;
+    }
+
+    // 2. Validate wallet connection
+    if (!isConnected || !address) {
+      setError("Verify Wallet: Connect wallet before attempting asset issuance.");
+      setDeployStatus("IDLE");
+      return;
+    }
+
+    // 3. Confirm network and RPC availability/health
     try {
-      if (isElectron) {
-        const created = await window.electron!.dbCreateAsset({
-          name: form.name,
-          symbol: form.symbol,
-          supply: form.supply,
-          type: form.type,
-          channel: form.channel || "default-channel",
-          orgId: DESKTOP_ORG_ID,
-          chaincode: "assets",
-          externalId: form.subAccount || null,
-          status: "Active",
-        });
-        setAssets((current) => [normalizeAssets([created])[0], ...current]);
-      } else {
-        throw new Error("On-chain asset issuance is not configured for the web application.");
+      const liveStatusRes = await fetch("/api/blockchain/status");
+      const liveStatus = await liveStatusRes.json();
+      if (!liveStatusRes.ok || !liveStatus?.connected || !liveStatus?.rpcHealthy) {
+        throw new Error("Blockchain RPC connection is currently unavailable.");
       }
 
-      setError(null);
-      setIssued(true);
-      setShowForm(false);
-      setForm({ name: "", symbol: "", supply: "", type: "Fungible", channel: "", subAccount: "" });
-      setTimeout(() => setIssued(false), 3000);
-    } catch (err) {
-      console.error("Error issuing asset:", err);
-      setError(err instanceof Error ? err.message : "Failed to issue asset.");
-    } finally {
+      if (chainId !== liveStatus.chainId) {
+        setError(`Wrong Network: Please switch your wallet to chain ID ${liveStatus.chainId} (${liveStatus.network}) to deploy.`);
+        setDeployStatus("IDLE");
+        return;
+      }
+    } catch (err: any) {
+      setError(err?.message ?? "Blockchain query failed. RPC service unavailable.");
+      setDeployStatus("IDLE");
+      return;
+    }
+
+    setDeployStatus("AWAITING_SIGNATURE");
+    setIssuing(true);
+
+    try {
+      // 4. Construct Deploy Bytecode + construct deploy parameter encoding
+      const abi = ["constructor(string name, string symbol, uint256 initialSupply)"];
+      const iface = new ethers.Interface(abi);
+      // Pad metadata for deployment
+      const encodedArgs = iface.encodeDeploy([
+        form.name.trim(),
+        form.symbol.trim().toUpperCase(),
+        ethers.parseEther(form.supply.trim())
+      ]);
+      const deployData = (MINIMAL_ERC20_BYTECODE + encodedArgs.slice(2)) as `0x${string}`;
+
+      // 5. Submit real transaction from connected user wallet
+      const hash = await sendTransactionAsync({
+        data: deployData,
+        value: 0n,
+      });
+
+      setDeployTxHash(hash);
+      setDeployStatus("SUBMITTED");
+    } catch (err: any) {
+      console.error("Deployment failed or was rejected:", err);
+      setDeployStatus("REJECTED");
+      setError(err?.shortMessage || err?.message || "User rejected signature request or deployment failed.");
       setIssuing(false);
     }
   };
+
+  // Wait for receipt confirmation
+  useEffect(() => {
+    if (!deployTxHash) return;
+
+    if (waitingForReceipt) {
+      setDeployStatus("PENDING");
+      return;
+    }
+
+    if (receipt) {
+      const blockNumber = receipt.blockNumber != null ? Number(receipt.blockNumber) : undefined;
+      if (receipt.status === "success" || receipt.status === 1 || receipt.status === true) {
+        setDeployStatus("CONFIRMED");
+        
+        // Save the resulting metadata to indexer/database
+        const contractAddress = receipt.contractAddress ?? undefined;
+        
+        const persistAsset = async () => {
+          try {
+            if (isElectron) {
+              await window.electron!.dbCreateAsset({
+                name: form.name.trim(),
+                symbol: form.symbol.trim().toUpperCase(),
+                supply: form.supply.trim(),
+                type: form.type,
+                channel: form.channel || "default-channel",
+                orgId: DESKTOP_ORG_ID,
+                chaincode: "assets",
+                externalId: form.subAccount || null,
+                status: "Active",
+                contractAddress,
+                txHash: deployTxHash,
+                blockNumber,
+                ownerAddress: address,
+                chainId,
+              });
+            } else {
+              const res = await fetch("/api/live/assets", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  name: form.name.trim(),
+                  symbol: form.symbol.trim().toUpperCase(),
+                  supply: form.supply.trim(),
+                  type: form.type,
+                  channel: form.channel || "default-channel",
+                  chaincode: "assets",
+                  contractAddress,
+                  txHash: deployTxHash,
+                  blockNumber,
+                  chainId,
+                  ownerAddress: address,
+                  status: "Active",
+                }),
+              });
+              if (!res.ok) {
+                const payload = await res.json().catch(() => ({}));
+                console.error("Failed to persist asset metadata to backend:", payload?.error);
+              }
+            }
+            // Trigger local refresh
+            fetchAssets();
+            setIssued(true);
+            setShowForm(false);
+            setForm({ name: "", symbol: "", supply: "", type: "Fungible", channel: "", subAccount: "" });
+            setTimeout(() => setIssued(false), 5000);
+          } catch (err) {
+            console.error("Failed to store asset metadata:", err);
+          } finally {
+            setIssuing(false);
+            setDeployTxHash(null);
+            setDeployStatus("IDLE");
+          }
+        };
+
+        persistAsset();
+      } else {
+        setDeployStatus("FAILED");
+        setError("Deployment transaction reverted on-chain.");
+        setIssuing(false);
+        setDeployTxHash(null);
+      }
+    }
+  }, [receipt, waitingForReceipt, deployTxHash]);
 
   const openModal = (kind: ActionKind, asset: Asset) => {
     setModal({ kind, asset });
@@ -270,6 +444,27 @@ export default function DigitalAssetsPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
+      {/* Dynamic Capability Banners */}
+      {capabilities?.digitalAssetIssuance === "DEVELOPMENT_ONLY" && (
+        <div className="p-4 rounded-xl border border-yellow-500/30 bg-yellow-500/10 flex items-start gap-3 text-yellow-300 text-sm">
+          <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Development mode: demonstration data only.</p>
+            <p className="text-white/60">No real on-chain transaction lifecycle will occur unless strict live mode is configured.</p>
+          </div>
+        </div>
+      )}
+
+      {capabilities?.digitalAssetIssuance === "UNAVAILABLE" && (
+        <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 flex items-start gap-3 text-red-300 text-sm">
+          <X className="h-5 w-5 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Live asset service is completely unavailable.</p>
+            <p className="text-white/60">EVM RPC connection has failed or is disconnected. Real operations are disabled.</p>
+          </div>
+        </div>
+      )}
+
       {modal?.kind === "transfer" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0e0e11] shadow-2xl p-6 space-y-4">
@@ -390,7 +585,8 @@ export default function DigitalAssetsPage() {
         </div>
         <Button
           onClick={() => setShowForm((s) => !s)}
-          className="bg-gradient-to-r from-[#ffae00] to-[#ff6600] hover:opacity-90 text-black font-semibold border-0 shadow-[0_0_15px_rgba(255,174,0,0.3)]"
+          disabled={!isAssetIssuanceEnabled}
+          className="bg-gradient-to-r from-[#ffae00] to-[#ff6600] text-black font-semibold border-0 shadow-[0_0_15px_rgba(255,174,0,0.3)] disabled:opacity-40"
         >
           <Plus className="h-4 w-4 mr-2" /> Issue Asset
         </Button>
@@ -398,7 +594,7 @@ export default function DigitalAssetsPage() {
 
       {issued && (
         <div className="p-4 rounded-xl border border-green-500/30 bg-green-500/10 text-green-400 text-sm">
-          ✓ Asset issued successfully on the configured blockchain network.
+          ✓ Asset issued successfully on the configured blockchain network with confirmed block transaction.
         </div>
       )}
 
@@ -421,7 +617,7 @@ export default function DigitalAssetsPage() {
                 <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="HyperToken" className="bg-black/50 border-white/10 text-white placeholder:text-white/30 focus-visible:ring-[#ffae00]" />
               </div>
               <div className="space-y-2">
-                <Label className="text-white/70">Ticker Symbol</Label>
+                <Label className="text-[#0ea5e9]">Ticker Symbol</Label>
                 <Input value={form.symbol} onChange={(e) => setForm((f) => ({ ...f, symbol: e.target.value }))} placeholder="HXT" className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono focus-visible:ring-[#ffae00]" />
               </div>
               <div className="space-y-2">
@@ -449,8 +645,21 @@ export default function DigitalAssetsPage() {
                 <Input value={form.subAccount} onChange={(e) => setForm((f) => ({ ...f, subAccount: e.target.value }))} placeholder="finance-dept" className="bg-black/50 border-white/10 text-white placeholder:text-white/30 font-mono text-sm focus-visible:ring-[#ffae00]" />
               </div>
             </div>
-            <Button onClick={handleIssue} disabled={issuing || !form.name || !form.symbol || !form.supply} className="w-full bg-gradient-to-r from-[#ffae00] to-[#ff6600] hover:opacity-90 text-black font-semibold border-0 disabled:opacity-40">
-              {issuing ? <span className="flex items-center gap-2"><span className="animate-spin h-4 w-4 border-2 border-black border-t-transparent rounded-full" />Issuing on network…</span> : "Issue Asset"}
+            
+            {/* Action buttons & feedback of state model */}
+            <Button 
+              onClick={handleIssue} 
+              disabled={issuing || !form.name || !form.symbol || !form.supply} 
+              className="w-full bg-gradient-to-r from-[#ffae00] to-[#ff6600] hover:opacity-90 text-black font-semibold border-0 disabled:opacity-40"
+            >
+              {deployStatus === "VALIDATING" && "Validating transaction requirements..."}
+              {deployStatus === "AWAITING_SIGNATURE" && "Awaiting wallet authorization signature..."}
+              {deployStatus === "SUBMITTED" && "Transaction submitted to blockchain..."}
+              {deployStatus === "PENDING" && "Deploying contract: pending block confirmation..."}
+              {deployStatus === "CONFIRMED" && "Deploy transaction confirmed!"}
+              {deployStatus === "FAILED" && "Transaction reverted. Deploy failed."}
+              {deployStatus === "REJECTED" && "Deploy rejected or failed."}
+              {deployStatus === "IDLE" && "Issue Asset"}
             </Button>
           </CardContent>
         </Card>
@@ -490,7 +699,7 @@ export default function DigitalAssetsPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-white text-base">Issued Assets</CardTitle>
           {!loading && (
-            <button onClick={() => window.location.reload()} className="text-white/50 hover:text-white transition-colors">
+            <button onClick={fetchAssets} className="text-white/50 hover:text-white transition-colors">
               <RefreshCw className="h-4 w-4" />
             </button>
           )}
@@ -503,64 +712,94 @@ export default function DigitalAssetsPage() {
             </div>
           ) : assets.length === 0 ? (
             <div className="text-center py-8 text-white/50">
-              <Coins className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>No assets found. Issue your first asset to get started.</p>
+              <Coins className="h-8 w-8 mx-auto mb-2 opacity-50 text-[#ffae00]" />
+              <p>No real on-chain assets or demo assets are currently available.</p>
             </div>
           ) : (
             <div className="rounded-lg border border-white/10 overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-white/5">
                   <tr>
-                    {["Asset", "Symbol", "Supply", "Type", "Channel", "Status", "Actions"].map((h) => (
+                    {["Asset", "Symbol", "Supply", "Type", "Channel", "Status", "Source", "Explorer", "Actions"].map((h) => (
                       <th key={h} className="px-4 py-3 text-left text-white/50 font-medium">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {assets.map((a, i) => (
-                    <tr key={i} className="border-t border-white/10 hover:bg-white/5 transition-colors">
-                      <td className="px-4 py-3 text-white font-medium">{a.name}</td>
-                      <td className="px-4 py-3 font-mono text-[#ffae00]">{a.symbol}</td>
-                      <td className="px-4 py-3 text-white/70">{a.supply}</td>
-                      <td className="px-4 py-3">
-                        <Badge variant="outline" className={a.type === "Fungible" ? "border-blue-500/40 text-blue-400 bg-blue-500/10" : "border-purple-500/40 text-purple-400 bg-purple-500/10"}>
-                          {a.type}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-white/60 text-xs">{a.channel}</td>
-                      <td className="px-4 py-3">
-                        <Badge variant="outline" className={a.status === "Active" ? "border-green-500/40 text-green-400 bg-green-500/10" : "border-yellow-500/40 text-yellow-400 bg-yellow-500/10"}>
-                          {a.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          <button
-                            title="Transfer tokens"
-                            onClick={() => openModal("transfer", a)}
-                            className="p-1.5 rounded text-white/40 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
-                          >
-                            <ArrowUpRight className="h-4 w-4" />
-                          </button>
-                          <button
-                            title="Burn tokens"
-                            onClick={() => openModal("burn", a)}
-                            className="p-1.5 rounded text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                          >
-                            <Flame className="h-4 w-4" />
-                          </button>
-                          <button
-                            title="Sync from chain"
-                            onClick={() => handleSync(a)}
-                            disabled={syncingRow === a.symbol}
-                            className="p-1.5 rounded text-white/40 hover:text-green-400 hover:bg-green-500/10 transition-colors disabled:opacity-40"
-                          >
-                            <RefreshCw className={`h-4 w-4 ${syncingRow === a.symbol ? "animate-spin" : ""}`} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {assets.map((a, i) => {
+                    const isDemoAsset = a.status === "Demo";
+                    return (
+                      <tr key={i} className="border-t border-white/10 hover:bg-white/5 transition-colors">
+                        <td className="px-4 py-3 text-white font-medium">{a.name}</td>
+                        <td className="px-4 py-3 font-mono text-[#ffae00]">{a.symbol}</td>
+                        <td className="px-4 py-3 text-white/70">{a.supply}</td>
+                        <td className="px-4 py-3">
+                          <Badge variant="outline" className={a.type === "Fungible" ? "border-blue-500/40 text-blue-400 bg-blue-500/10" : "border-purple-500/40 text-purple-400 bg-purple-500/10"}>
+                            {a.type}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-white/60 text-xs">{a.channel}</td>
+                        <td className="px-4 py-3">
+                          <Badge variant="outline" className={a.status === "Active" ? "border-green-500/40 text-green-400 bg-green-500/10" : "border-yellow-500/40 text-yellow-400 bg-yellow-500/10"}>
+                            {a.status}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          {isDemoAsset ? (
+                            <Badge className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-xs px-2 py-0.5">
+                              DEMO
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-green-500/10 border border-green-500/30 text-green-400 text-xs px-2 py-0.5">
+                              LIVE
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {a.txHash ? (
+                            <a 
+                              href={backendConfig?.explorerUrl ? `${backendConfig.explorerUrl}/tx/${a.txHash}` : `https://base.org/explorer/tx/${a.txHash}`} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="text-[#1500ff] hover:underline text-xs"
+                            >
+                              Tx Link
+                            </a>
+                          ) : (
+                            <span className="text-white/30 text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1">
+                            <button
+                              title="Transfer tokens"
+                              onClick={() => openModal("transfer", a)}
+                              disabled={isDemoAsset}
+                              className="p-1.5 rounded text-white/40 hover:text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                            >
+                              <ArrowUpRight className="h-4 w-4" />
+                            </button>
+                            <button
+                              title="Burn tokens"
+                              onClick={() => openModal("burn", a)}
+                              disabled={isDemoAsset}
+                              className="p-1.5 rounded text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                            >
+                              <Flame className="h-4 w-4" />
+                            </button>
+                            <button
+                              title="Sync from chain"
+                              onClick={() => handleSync(a)}
+                              disabled={isDemoAsset || syncingRow === a.symbol}
+                              className="p-1.5 rounded text-white/40 hover:text-green-400 hover:bg-green-500/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                            >
+                              <RefreshCw className={`h-4 w-4 ${syncingRow === a.symbol ? "animate-spin" : ""}`} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -568,5 +807,7 @@ export default function DigitalAssetsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
   );
 }

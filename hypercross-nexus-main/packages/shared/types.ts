@@ -98,3 +98,27 @@ export interface ApiError {
   message: string;
   requestId?: string;
 }
+
+export type CapabilityStatus =
+  | "LIVE"
+  | "UNAVAILABLE"
+  | "DEGRADED"
+  | "COMING_SOON"
+  | "DEVELOPMENT_ONLY";
+
+export interface CapabilityRegistry {
+  backendApi: CapabilityStatus;
+  blockchainRpc: CapabilityStatus;
+  wallet: CapabilityStatus;
+  chainstackConnectivity: CapabilityStatus;
+  digitalAssetIssuance: CapabilityStatus;
+  send: CapabilityStatus;
+  swap: CapabilityStatus;
+  transactions: CapabilityStatus;
+  rwaInfrastructure: CapabilityStatus;
+  nftMarketplace: CapabilityStatus;
+  tokenFundraising: CapabilityStatus;
+  tokenLaunchpad: CapabilityStatus;
+  derivatives: CapabilityStatus;
+  copyTrading: CapabilityStatus;
+}

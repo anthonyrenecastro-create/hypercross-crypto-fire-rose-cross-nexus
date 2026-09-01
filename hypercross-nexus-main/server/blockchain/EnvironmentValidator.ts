@@ -70,6 +70,18 @@ export class EnvironmentValidator {
       );
     }
 
+    // ─── REQUIRED: Demo mode restriction in production ───────────────────────
+    const isProd = env.NODE_ENV === "production";
+    const allowDemo = env.ALLOW_DEMO_DATA === "true";
+    const isDemoMode = (env.APP_DATA_MODE || "demo") === "demo";
+
+    if (isProd && (allowDemo || isDemoMode)) {
+      errors.push(
+        "CONF_ERROR: Demo data fallback is not allowed in production. " +
+        "To run in production, set APP_DATA_MODE=live, ALLOW_DEMO_DATA=false, and configure real credentials."
+      );
+    }
+
     // ─── Compile Result ────────────────────────────────────────────────────
     return {
       valid: errors.length === 0,

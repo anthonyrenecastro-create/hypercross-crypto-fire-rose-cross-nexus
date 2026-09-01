@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { requireExecutionReady } from "../lib/transactionGuard";
 
 type AssetOption = "ETH" | "USDC" | "DAI" | "WETH";
 
@@ -13,7 +14,7 @@ type AssetOption = "ETH" | "USDC" | "DAI" | "WETH";
  * Never displays "Transfer successful" before a receipt confirms it.
  */
 export function SendPage() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const { sendTransactionAsync, isPending: sending } = useSendTransaction();
 
   const [asset, setAsset] = useState<AssetOption>("ETH");
@@ -25,17 +26,43 @@ export function SendPage() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [gasEstimate, setGasEstimate] = useState<string | null>(null);
 
+  const [capabilities, setCapabilities] = useState<any>(null);
+  const [backendConfig, setBackendConfig] = useState<any>(null);
+
   const { data: receipt, isLoading: waitingForReceipt } = useWaitForTransactionReceipt({
     hash: (txHash as `0x${string}`) || undefined,
     query: { enabled: Boolean(txHash) },
   });
 
+  const loadCapabilitiesAndStatus = async () => {
+    try {
+      const [capRes, statusRes] = await Promise.all([
+        fetch("/api/config/capabilities"),
+        fetch("/api/blockchain/status")
+      ]);
+      const capPayload = await capRes.json().catch(() => ({}));
+      const statusPayload = await statusRes.json().catch(() => ({}));
+      if (capRes.ok && capPayload.capabilities) {
+        setCapabilities(capPayload.capabilities);
+      }
+      if (statusRes.ok && statusPayload) {
+        setBackendConfig(statusPayload);
+      }
+    } catch (err) {
+      console.error("Failed to load capabilities or status for Send:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadCapabilitiesAndStatus();
+  }, []);
+
   const status = !txHash
     ? null
     : waitingForReceipt
-      ? "Transaction submitted — waiting for confirmation…"
+      ? "Transaction submitted — waiting for confirmation on-chain…"
       : receipt?.status === "success"
-        ? "Transaction confirmed"
+        ? "Transaction confirmed successfully"
         : receipt
           ? "Transaction failed (reverted on-chain)"
           : "Transaction submitted";
@@ -44,8 +71,25 @@ export function SendPage() {
     setError(null);
     setTxHash(null);
     setTransactionId(null);
-    if (!isConnected || !address) {
-      setError("Connect a wallet first.");
+
+    // Dynamic readiness guard verification
+    const rpcHealthy = backendConfig?.rpcHealthy ?? false;
+    const backendHealthy = capabilities?.backendApi === "LIVE";
+    const correctChain = chainId === backendConfig?.chainId;
+    const isSendEnabled = capabilities?.send === "LIVE" || capabilities?.send === "DEVELOPMENT_ONLY";
+
+    const guardResult = requireExecutionReady({
+      walletConnected: isConnected,
+      walletAddress: address,
+      backendHealthy,
+      rpcHealthy,
+      correctChain,
+      signerAvailable: isConnected && !!address,
+      featureEnabled: isSendEnabled
+    });
+
+    if (!guardResult.ready) {
+      setError(guardResult.error);
       return;
     }
 
@@ -86,11 +130,24 @@ export function SendPage() {
       if (transactionId) {
         await fetch(`/api/transactions/${transactionId}/cancelled`, { method: "POST" }).catch(() => {});
       }
-      setError(err?.shortMessage || err?.message || "Transaction was not sent.");
+      
+      // Translate common wallet/provider errors
+      const msg = err?.message || "";
+      if (msg.includes("rejected") || msg.includes("User rejected")) {
+        setError("User rejected signature request.");
+      } else if (msg.includes("insufficient funds") || msg.includes("gas required exceeds allowance")) {
+        setError("Insufficient funds for gas value plus gas.");
+      } else if (msg.includes("Wrong network") || msg.includes("chain mismatch")) {
+        setError("Wrong network selected in wallet.");
+      } else {
+        setError(err?.shortMessage || err?.message || "Transaction was not sent.");
+      }
     } finally {
       setPreparing(false);
     }
   };
+
+  const isSendActive = capabilities?.send === "LIVE" || capabilities?.send === "DEVELOPMENT_ONLY";
 
   return (
     <div className="max-w-lg mx-auto space-y-6">
@@ -100,6 +157,15 @@ export function SendPage() {
           Real transfer — signed by your connected wallet. Nothing is simulated.
         </p>
       </div>
+
+      {!isSendActive && capabilities && (
+        <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 flex items-start gap-3 text-red-300 text-sm">
+          <div>
+            <p className="font-semibold">Send feature is completely unavailable.</p>
+            <p className="text-white/60 text-xs">EVM RPC connection has failed or is disconnected. Real operations are disabled.</p>
+          </div>
+        </div>
+      )}
 
       <Card className="glass-panel neon-border-blue border-t-2">
         <CardHeader>
@@ -143,17 +209,30 @@ export function SendPage() {
           {status && (
             <div className={`p-3 rounded-lg border text-sm ${receipt?.status === "success" ? "bg-green-500/10 border-green-500/30 text-green-300" : receipt?.status === "reverted" ? "bg-red-500/10 border-red-500/30 text-red-300" : "bg-yellow-500/10 border-yellow-500/30 text-yellow-300"}`}>
               {status}
-              {txHash && <p className="font-mono text-xs mt-1 break-all">{txHash}</p>}
+              {txHash && (
+                <p className="font-mono text-xs mt-1 break-all">
+                  <a href={backendConfig?.explorerUrl ? `${backendConfig.explorerUrl}/tx/${txHash}` : `https://base.org/explorer/tx/${txHash}`} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">
+                    {txHash}
+                  </a>
+                </p>
+              )}
             </div>
           )}
 
           <Button
-            disabled={!isConnected || preparing || sending || !recipient || !amount}
+            disabled={!isSendActive || !isConnected || preparing || sending || !recipient || !amount}
             onClick={handlePrepareAndSend}
             className="w-full bg-gradient-to-r from-[#1500ff] to-[#c300ff] text-white border-0 disabled:opacity-40"
           >
             {preparing || sending ? "Awaiting wallet…" : "Review & Send"}
           </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default SendPage;
         </CardContent>
       </Card>
     </div>

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { requireExecutionReady } from "../lib/transactionGuard";
 
 const SLIPPAGE_OPTIONS = [10, 50, 100]; // bps: 0.1%, 0.5%, 1.0%
 
@@ -13,7 +14,7 @@ const SLIPPAGE_OPTIONS = [10, 50, 100]; // bps: 0.1%, 0.5%, 1.0%
  * rather than falling back to a fabricated quote.
  */
 export function SwapPage() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const { sendTransactionAsync, isPending: sending } = useSendTransaction();
 
   const [tokenIn, setTokenIn] = useState("");
@@ -25,16 +26,64 @@ export function SwapPage() {
   const [loading, setLoading] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
+  const [capabilities, setCapabilities] = useState<any>(null);
+  const [backendConfig, setBackendConfig] = useState<any>(null);
+
   const { data: receipt, isLoading: waitingForReceipt } = useWaitForTransactionReceipt({
     hash: (txHash as `0x${string}`) || undefined,
     query: { enabled: Boolean(txHash) },
   });
+
+  const loadCapabilitiesAndStatus = async () => {
+    try {
+      const [capRes, statusRes] = await Promise.all([
+        fetch("/api/config/capabilities"),
+        fetch("/api/blockchain/status")
+      ]);
+      const capPayload = await capRes.json().catch(() => ({}));
+      const statusPayload = await statusRes.json().catch(() => ({}));
+      if (capRes.ok && capPayload.capabilities) {
+        setCapabilities(capPayload.capabilities);
+      }
+      if (statusRes.ok && statusPayload) {
+        setBackendConfig(statusPayload);
+      }
+    } catch (err) {
+      console.error("Failed to load capabilities or status for Swap:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadCapabilitiesAndStatus();
+  }, []);
 
   const quoteExpired = quote && new Date(quote.quoteExpiresAt).getTime() < Date.now();
 
   const fetchQuote = async () => {
     setError(null);
     setQuote(null);
+
+    // Guard quote request as well
+    const rpcHealthy = backendConfig?.rpcHealthy ?? false;
+    const backendHealthy = capabilities?.backendApi === "LIVE";
+    const correctChain = chainId === backendConfig?.chainId;
+    const isSwapEnabled = capabilities?.swap === "LIVE" || capabilities?.swap === "DEVELOPMENT_ONLY";
+
+    const guardResult = requireExecutionReady({
+      walletConnected: isConnected,
+      walletAddress: address,
+      backendHealthy,
+      rpcHealthy,
+      correctChain,
+      signerAvailable: isConnected && !!address,
+      featureEnabled: isSwapEnabled
+    });
+
+    if (!guardResult.ready) {
+      setError(guardResult.error);
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await fetch("/api/swap/quote", {
@@ -58,6 +107,28 @@ export function SwapPage() {
   const approve = async () => {
     if (!quote?.allowanceTarget) return;
     setError(null);
+
+    // Guard approval write operation
+    const rpcHealthy = backendConfig?.rpcHealthy ?? false;
+    const backendHealthy = capabilities?.backendApi === "LIVE";
+    const correctChain = chainId === backendConfig?.chainId;
+    const isSwapEnabled = capabilities?.swap === "LIVE" || capabilities?.swap === "DEVELOPMENT_ONLY";
+
+    const guardResult = requireExecutionReady({
+      walletConnected: isConnected,
+      walletAddress: address,
+      backendHealthy,
+      rpcHealthy,
+      correctChain,
+      signerAvailable: isConnected && !!address,
+      featureEnabled: isSwapEnabled
+    });
+
+    if (!guardResult.ready) {
+      setError(guardResult.error);
+      return;
+    }
+
     try {
       const res = await fetch("/api/swap/approve/prepare", {
         method: "POST",
@@ -80,7 +151,13 @@ export function SwapPage() {
         body: JSON.stringify({ transactionHash: hash }),
       });
     } catch (err: any) {
-      setError(err?.shortMessage || err?.message || "Approval was not sent.");
+      // Translate complex provider errors
+      const msg = err?.message || "";
+      if (msg.includes("rejected") || msg.includes("User rejected")) {
+        setError("User rejected signature request.");
+      } else {
+        setError(err?.shortMessage || err?.message || "Approval was not sent.");
+      }
     }
   };
 
@@ -91,6 +168,28 @@ export function SwapPage() {
       return;
     }
     setError(null);
+
+    // Guard execution write operation
+    const rpcHealthy = backendConfig?.rpcHealthy ?? false;
+    const backendHealthy = capabilities?.backendApi === "LIVE";
+    const correctChain = chainId === backendConfig?.chainId;
+    const isSwapEnabled = capabilities?.swap === "LIVE" || capabilities?.swap === "DEVELOPMENT_ONLY";
+
+    const guardResult = requireExecutionReady({
+      walletConnected: isConnected,
+      walletAddress: address,
+      backendHealthy,
+      rpcHealthy,
+      correctChain,
+      signerAvailable: isConnected && !!address,
+      featureEnabled: isSwapEnabled
+    });
+
+    if (!guardResult.ready) {
+      setError(guardResult.error);
+      return;
+    }
+
     try {
       const res = await fetch("/api/swap/execute/prepare", {
         method: "POST",
@@ -115,9 +214,16 @@ export function SwapPage() {
         body: JSON.stringify({ transactionHash: hash }),
       });
     } catch (err: any) {
-      setError(err?.shortMessage || err?.message || "Swap was not sent.");
+      const msg = err?.message || "";
+      if (msg.includes("rejected") || msg.includes("User rejected")) {
+        setError("User rejected signature request.");
+      } else {
+        setError(err?.shortMessage || err?.message || "Swap was not sent.");
+      }
     }
   };
+
+  const isSwapActive = capabilities?.swap === "LIVE" || capabilities?.swap === "DEVELOPMENT_ONLY";
 
   return (
     <div className="max-w-lg mx-auto space-y-6">
@@ -125,6 +231,15 @@ export function SwapPage() {
         <h2 className="text-2xl font-bold text-white">Swap</h2>
         <p className="text-white/50 mt-1 text-sm">Real quotes via 0x. Requires ZEROX_API_KEY server-side.</p>
       </div>
+
+      {!isSwapActive && capabilities && (
+        <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 flex items-start gap-3 text-red-300 text-sm">
+          <div>
+            <p className="font-semibold">Swap Execution Unavailable</p>
+            <p className="text-white/60 text-xs">Real swaps are disabled in this environment because the 0x API key (ZEROX_API_KEY) is not configured, or the RPC connectivity check failed.</p>
+          </div>
+        </div>
+      )}
 
       <Card className="glass-panel neon-border-purple border-t-2">
         <CardHeader>
@@ -148,17 +263,21 @@ export function SwapPage() {
             <Label className="text-white/70">Slippage</Label>
             <div className="flex gap-2">
               {SLIPPAGE_OPTIONS.map((bps) => (
-                <button key={bps} onClick={() => setSlippageBps(bps)} className={`px-3 py-1.5 rounded-lg text-sm border ${slippageBps === bps ? "border-[#c300ff] bg-[#c300ff]/20 text-white" : "border-white/10 text-white/50"}`}>
+                <button
+                  key={bps}
+                  onClick={() => setSlippageBps(bps)}
+                  className={`px-3 py-1.5 rounded-lg text-sm border ${slippageBps === bps ? "border-[#c300ff] bg-[#c300ff]/20 text-white" : "border-white/10 text-white/50"}`}
+                >
                   {(bps / 100).toFixed(2)}%
                 </button>
               ))}
             </div>
-            {slippageBps >= 300 && <p className="text-yellow-400 text-xs">High slippage tolerance — you may receive significantly less than expected.</p>}
+            {slippageBps >= 300 && <p className="text-yellow-400 text-xs text-yellow-500/70">High slippage tolerance — you may receive significantly less than expected.</p>}
           </div>
 
           {error && <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm">{error}</div>}
 
-          <Button disabled={!isConnected || loading || !tokenIn || !tokenOut || !amountIn} onClick={fetchQuote} className="w-full bg-white/10 hover:bg-white/20 text-white border-0 disabled:opacity-40">
+          <Button disabled={!isSwapActive || !isConnected || loading || !tokenIn || !tokenOut || !amountIn} onClick={fetchQuote} className="w-full bg-white/10 hover:bg-white/20 text-white border-0 disabled:opacity-40">
             {loading ? "Fetching quote…" : "Get Real Quote"}
           </Button>
 
@@ -185,9 +304,20 @@ export function SwapPage() {
           {txHash && (
             <div className={`p-3 rounded-lg border text-sm ${receipt?.status === "success" ? "bg-green-500/10 border-green-500/30 text-green-300" : "bg-yellow-500/10 border-yellow-500/30 text-yellow-300"}`}>
               {waitingForReceipt ? "Pending…" : receipt?.status === "success" ? "Confirmed" : "Failed"}
-              <p className="font-mono text-xs mt-1 break-all">{txHash}</p>
+              <p className="font-mono text-xs mt-1 break-all">
+                <a href={backendConfig?.explorerUrl ? `${backendConfig.explorerUrl}/tx/${txHash}` : `https://base.org/explorer/tx/${txHash}`} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">
+                  {txHash}
+                </a>
+              </p>
             </div>
           )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default SwapPage;
         </CardContent>
       </Card>
     </div>

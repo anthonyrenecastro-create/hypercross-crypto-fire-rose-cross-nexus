@@ -173,6 +173,28 @@ export function initDb() {
     db.exec(`ALTER TABLE transactions ADD COLUMN intentData TEXT`);
   }
 
+  // Migration guard: add custom columns to pre-existing local databases for assets
+  const assetCols = db.prepare(`PRAGMA table_info(assets)`).all() as Array<{ name: string }>;
+  const assetColNames = new Set(assetCols.map((c) => c.name));
+  if (!assetColNames.has("contractAddress")) {
+    db.exec(`ALTER TABLE assets ADD COLUMN contractAddress TEXT`);
+  }
+  if (!assetColNames.has("txHash")) {
+    db.exec(`ALTER TABLE assets ADD COLUMN txHash TEXT`);
+  }
+  if (!assetColNames.has("blockNumber")) {
+    db.exec(`ALTER TABLE assets ADD COLUMN blockNumber INTEGER`);
+  }
+  if (!assetColNames.has("chainId")) {
+    db.exec(`ALTER TABLE assets ADD COLUMN chainId INTEGER`);
+  }
+  if (!assetColNames.has("ownerAddress")) {
+    db.exec(`ALTER TABLE assets ADD COLUMN ownerAddress TEXT`);
+  }
+  if (!assetColNames.has("status")) {
+    db.exec(`ALTER TABLE assets ADD COLUMN status TEXT`);
+  }
+
   // Append-only audit trail for wallet/transaction/swap lifecycle events.
   db.exec(`
     CREATE TABLE IF NOT EXISTS auditLog (
@@ -430,6 +452,10 @@ export const queries = {
     create: db.prepare(`
       INSERT INTO assets (id, name, symbol, supply, type, channel, chaincode, orgId, externalId)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    createFull: db.prepare(`
+      INSERT INTO assets (id, name, symbol, supply, type, channel, chaincode, orgId, contractAddress, txHash, blockNumber, chainId, ownerAddress, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     getByOrg: db.prepare(`SELECT * FROM assets WHERE orgId = ? ORDER BY createdAt DESC`),
     update: db.prepare(`

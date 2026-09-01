@@ -550,11 +550,44 @@ async function startServer() {
   });
 
   // Health check endpoint (application process health)
-  app.get("/api/health", (req, res) => {
-    res.json({
-      status: "ok",
+  app.get("/api/health", async (req, res) => {
+    let rpcHealthy = false;
+    let chainId: number | null = null;
+    let blockNumber: number | null = null;
+    let error: string | null = null;
+
+    try {
+      rpcHealthy = await blockchainService.healthCheck();
+      if (rpcHealthy) {
+        const status = await blockchainService.getStatus();
+        chainId = status.chainId ?? null;
+        blockNumber = status.blockNumber ?? null;
+        if (blockNumber === null) {
+          blockNumber = await blockchainService.getBlockNumber().catch(() => null);
+        }
+      } else {
+        error = "Chainstack RPC check failed.";
+      }
+    } catch (err: any) {
+      rpcHealthy = false;
+      error = err?.message ?? "Failed to query blockchain dependency";
+    }
+
+    const payload = {
+      ok: rpcHealthy,
+      backend: "online",
+      rpc: rpcHealthy ? "online" : "offline",
+      chainId,
+      blockNumber,
       timestamp: new Date().toISOString(),
-    });
+      ...(error && { error }),
+    };
+
+    if (!rpcHealthy) {
+      return res.status(503).json(payload);
+    }
+
+    res.json(payload);
   });
 
   // Readiness check endpoint (infrastructure dependencies)
@@ -629,6 +662,17 @@ async function startServer() {
   // GET /api/config/features - Resolved feature flags for the frontend (no secrets).
   app.get("/api/config/features", (req, res) => {
     res.json({ ok: true, features: getFeatureFlags() satisfies FeatureFlags });
+  });
+
+  // GET /api/config/capabilities - Central capability registry mapping feature states dynamically
+  app.get("/api/config/capabilities", async (req, res) => {
+    try {
+      const { getCapabilities } = await import("./server/config/Capabilities");
+      const capabilities = await getCapabilities();
+      res.json({ ok: true, capabilities });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Failed to fetch capabilities" });
+    }
   });
 
   // Blockchain status endpoint (detailed blockchain information)
@@ -1540,6 +1584,37 @@ async function startServer() {
       res.json(assets);
     } catch (err: any) {
       res.status(500).json({ error: err?.message ?? "Failed to fetch assets" });
+    }
+  });
+
+  app.post("/api/live/assets", requireAuth, requirePermission("manage_assets"), async (req, res) => {
+    try {
+      const { name, symbol, supply, type, channel, chaincode, contractAddress, txHash, blockNumber, chainId, ownerAddress, status } = req.body ?? {};
+      if (!name || !symbol || !supply) {
+        return res.status(400).json({ error: "Name, symbol, and supply are required parameters." });
+      }
+
+      const id = `asset_${Date.now()}`;
+      queries.assets.createFull.run(
+        id,
+        name,
+        symbol,
+        supply.toString(),
+        type || "Fungible",
+        channel || "default-channel",
+        chaincode || "assets",
+        "local-desktop-org",
+        contractAddress || null,
+        txHash || null,
+        blockNumber ? Number(blockNumber) : null,
+        chainId ? Number(chainId) : null,
+        ownerAddress || null,
+        status || "CREATED"
+      );
+
+      res.status(201).json({ ok: true, message: "Asset recorded successfully.", id });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Failed to create asset" });
     }
   });
 
