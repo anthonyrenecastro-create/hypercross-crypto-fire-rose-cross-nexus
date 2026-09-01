@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -10,6 +10,28 @@ const rendererUrl = process.env.ELECTRON_RENDERER_URL || 'http://localhost:3000'
 const isDev = !app.isPackaged;
 
 let mainWindow = null;
+
+// Secure token storage: auth tokens are encrypted at rest via the OS credential
+// store (Windows DPAPI / macOS Keychain / libsecret) through Electron's
+// safeStorage API. Never stored in localStorage or plaintext JSON.
+function getSecureStorePath() {
+  return path.join(app.getPath('userData'), 'secure-store.json');
+}
+
+function readSecureStoreRaw() {
+  try {
+    const raw = fs.readFileSync(getSecureStorePath(), 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function writeSecureStoreRaw(data) {
+  fs.mkdirSync(path.dirname(getSecureStorePath()), { recursive: true });
+  fs.writeFileSync(getSecureStorePath(), JSON.stringify(data), { mode: 0o600 });
+}
+
 
 function getConfigSourcePath() {
   const userConfigPath = path.join(app.getPath('userData'), 'whiteLabelConfig.json');
@@ -87,6 +109,42 @@ ipcMain.handle('update-config', async (_event, config) => {
 
 ipcMain.handle('log', async (_event, message, data) => {
   console.log('[renderer]', message, data ?? '');
+});
+
+ipcMain.handle('secure-store-set', async (_event, key, value) => {
+  const store = readSecureStoreRaw();
+  if (safeStorage.isEncryptionAvailable()) {
+    store[key] = safeStorage.encryptString(String(value)).toString('base64');
+  } else {
+    // No OS credential store available (rare/headless environment) — refuse rather than write plaintext.
+    console.warn('safeStorage encryption unavailable; refusing to persist token in plaintext.');
+    return { ok: false, error: 'Secure storage unavailable on this system.' };
+  }
+  writeSecureStoreRaw(store);
+  return { ok: true };
+});
+
+ipcMain.handle('secure-store-get', async (_event, key) => {
+  const store = readSecureStoreRaw();
+  const encoded = store[key];
+  if (!encoded) return { ok: true, value: null };
+  try {
+    const value = safeStorage.decryptString(Buffer.from(encoded, 'base64'));
+    return { ok: true, value };
+  } catch (error) {
+    return { ok: false, error: 'Unable to decrypt stored value.' };
+  }
+});
+
+ipcMain.handle('secure-store-delete', async (_event, key) => {
+  const store = readSecureStoreRaw();
+  delete store[key];
+  writeSecureStoreRaw(store);
+  return { ok: true };
+});
+
+ipcMain.handle('get-api-base-url', async () => {
+  return process.env.HYPERCROSS_API_URL || 'http://localhost:3000';
 });
 
 app.whenReady().then(() => {

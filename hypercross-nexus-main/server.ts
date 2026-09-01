@@ -1,5 +1,7 @@
 import "dotenv/config";
 import express from "express";
+import helmet from "helmet";
+import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import crypto from "crypto";
@@ -15,6 +17,9 @@ import { SwapService } from "./server/swap/SwapService";
 import { OnChainTradingService } from "./server/trading/OnChainTradingService";
 import { toErrorPayload } from "./server/blockchain/errors";
 import { getFeatureFlags, type FeatureFlags } from "./server/config/FeatureFlags";
+import { productionAuthRouter } from "./server/auth/productionAuthRoutes";
+import { isPostgresConfigured, checkPostgresHealth, closePostgresPool } from "./server/db/postgres";
+import { billingRouter, handleStripeWebhook } from "./server/billing/billingRoutes";
 import {
   hashPassword,
   verifyPassword,
@@ -206,7 +211,34 @@ function envFlagEnabled(value: string | undefined): boolean {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
+
+  app.set("trust proxy", 1); // Railway/other PaaS run behind a reverse proxy
+
+  app.use(helmet({
+    contentSecurityPolicy: false, // the SPA sets its own CSP needs; avoid breaking Vite/dev assets
+  }));
+
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  app.use(cors({
+    origin(origin, callback) {
+      // Allow same-origin/non-browser requests (no Origin header, e.g. Electron/curl) and approved domains.
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  }));
+
+  // Stripe webhook endpoints require the raw request body for signature
+  // verification — they must never be parsed by the JSON body parser below.
+  const RAW_BODY_PATHS = new Set(["/api/webhooks/stripe", "/api/billing/webhook"]);
+  app.use((req, res, next) => {
+    if (RAW_BODY_PATHS.has(req.path)) return next();
+    return express.json({ limit: "1mb" })(req, res, next);
+  });
 
   app.use((req, _res, next) => {
     const rawCookies = String(req.headers.cookie ?? "");
@@ -222,8 +254,6 @@ async function startServer() {
     (req as any).cookies = cookies;
     next();
   });
-
-  app.use(express.json());
 
   function normalizeEmail(raw: string | undefined): string | null {
     const value = raw?.trim().toLowerCase();
@@ -529,6 +559,50 @@ async function startServer() {
       });
     }
   });
+
+  // ── Commercial deployment health endpoints (Railway-facing) ──
+  // /health/live: process is alive. /health/ready: required dependencies are reachable.
+  app.get("/health/live", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  app.get("/health/ready", async (req, res) => {
+    const [chainstackHealthy, postgres] = await Promise.all([
+      blockchainService.healthCheck().catch(() => false),
+      checkPostgresHealth(),
+    ]);
+
+    const dependencies = {
+      postgres: isPostgresConfigured() ? (postgres.healthy ? "healthy" : "unavailable") : "not_configured",
+      chainstack: chainstackHealthy ? "healthy" : "unavailable",
+    };
+
+    // Postgres is required for commercial account/billing state once configured;
+    // Chainstack degradation disables blockchain features but does not fail readiness by itself.
+    const ready = isPostgresConfigured() ? postgres.healthy : true;
+
+    return res.status(ready ? 200 : 503).json({
+      ready,
+      dependencies,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get("/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // ── Commercial (PostgreSQL-backed) auth + billing ──
+  // Mounted only when DATABASE_URL is configured; distinct paths from the
+  // legacy SQLite-backed /api/auth/signup|signin (see docs/DEPLOYMENT.md).
+  if (isPostgresConfigured()) {
+    app.use("/api/auth/v2", productionAuthRouter);
+    app.use("/api/billing", billingRouter);
+    app.post("/api/billing/webhook", express.raw({ type: "application/json" }), handleStripeWebhook);
+    console.log("✓ PostgreSQL-backed auth/billing routes mounted at /api/auth/v2 and /api/billing");
+  } else {
+    console.warn("⚠ DATABASE_URL not set — commercial auth/billing routes (/api/auth/v2, /api/billing) are disabled. Using legacy SQLite auth only.");
+  }
 
   // GET /api/config/features - Resolved feature flags for the frontend (no secrets).
   app.get("/api/config/features", (req, res) => {
@@ -2107,9 +2181,31 @@ async function startServer() {
     });
   }, 15000);
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  // Clean shutdown on SIGTERM/SIGINT (required for Railway/containerized deploys).
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`Received ${signal}, shutting down gracefully...`);
+    server.close(async () => {
+      try {
+        await blockchainService.disconnect();
+      } catch { /* best effort */ }
+      try {
+        await closePostgresPool();
+      } catch { /* best effort */ }
+      console.log("Shutdown complete.");
+      process.exit(0);
+    });
+    // Force-exit if close() hangs (e.g. a long-lived connection refuses to end).
+    setTimeout(() => process.exit(1), 10000).unref();
+  };
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
 }
 
 startServer().catch((err) => {

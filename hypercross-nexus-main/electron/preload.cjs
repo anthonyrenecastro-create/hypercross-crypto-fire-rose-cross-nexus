@@ -14,4 +14,10 @@ contextBridge.exposeInMainWorld('electron', {
   getConfig: () => ipcRenderer.invoke('get-config'),
   updateConfig: (config) => ipcRenderer.invoke('update-config', config),
   log: (message, data) => ipcRenderer.invoke('log', message, data),
+  // Secure, OS-backed token storage (Windows DPAPI / macOS Keychain / libsecret).
+  // Never store access/refresh tokens in localStorage or plaintext JSON.
+  secureStoreSet: (key, value) => ipcRenderer.invoke('secure-store-set', key, value),
+  secureStoreGet: (key) => ipcRenderer.invoke('secure-store-get', key),
+  secureStoreDelete: (key) => ipcRenderer.invoke('secure-store-delete', key),
+  getApiBaseUrl: () => ipcRenderer.invoke('get-api-base-url'),
 });
