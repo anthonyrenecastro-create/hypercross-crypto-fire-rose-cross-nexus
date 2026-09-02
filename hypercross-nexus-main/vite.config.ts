@@ -14,23 +14,11 @@ export default defineConfig({
     },
   },
   build: {
-    // let Rollup dynamically trace and split files naturally to reduce peak memory usage
+    // Let Rollup dynamically trace and split files naturally to reduce peak memory usage
+    // Avoid restrictive/circular manual chunk configuration under memory-limited systems.
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('viem')) {
-              return 'viem';
-            }
-            if (id.includes('@rainbow-me') || id.includes('wagmi')) {
-              return 'wagmi';
-            }
-            if (id.includes('ethers')) {
-              return 'ethers';
-            }
-            return 'vendor';
-          }
-        }
+        manualChunks: undefined,
       },
     },
   },
