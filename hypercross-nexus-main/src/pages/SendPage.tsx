@@ -202,10 +202,6 @@ export function SendPage() {
       } else {
         setError(err?.shortMessage || err?.message || "Transaction was not sent.");
       }
-        setError("Wrong network selected in wallet.");
-      } else {
-        setError(err?.shortMessage || err?.message || "Transaction was not sent.");
-      }
     } finally {
       setPreparing(false);
     }
