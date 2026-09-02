@@ -4,6 +4,7 @@ import helmet from "helmet";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { fileURLToPath } from "url";
 import crypto from "crypto";
 import whiteLabelConfig from "./config/whiteLabelConfig.json";
 import { queries } from "./src/db";
@@ -2306,7 +2307,8 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const serverDir = path.dirname(fileURLToPath(import.meta.url));
+    const distPath = path.join(serverDir, "dist");
     app.use(express.static(distPath));
     // Express 5 / path-to-regexp v6+ require a named wildcard param, not bare "*"
     app.get("/*splat", (req, res) => {
