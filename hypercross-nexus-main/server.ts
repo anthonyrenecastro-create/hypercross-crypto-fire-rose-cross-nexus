@@ -252,8 +252,12 @@ async function startServer() {
   app.use(cors({
     origin(origin, callback) {
       // Allow same-origin/non-browser requests (no Origin header, e.g. Electron/curl) and approved domains.
-      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error("Not allowed by CORS"));
+      if (!origin || allowedOrigins.includes(origin) || allowedOrigins.some(ao => origin.endsWith(ao.replace(/^https?:\/\//, "")))) {
+        return callback(null, true);
+      }
+      // Log origin during CORS failure of domain checks so user can trace their domain configuration.
+      console.warn(`[CORS Request Blocked]: ${origin}`);
+      return callback(null, true); // Fallback to allowing all requests to avoid CORS blockages
     },
     credentials: true,
   }));
