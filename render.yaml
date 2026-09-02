@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: hypercross-nexus
+    runtime: node
+    rootDir: hypercross-nexus-main
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production

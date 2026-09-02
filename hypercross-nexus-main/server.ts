@@ -5,6 +5,7 @@ import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "fs";
 import crypto from "crypto";
 import whiteLabelConfig from "./config/whiteLabelConfig.json";
 import { queries } from "./src/db";
@@ -2386,21 +2387,33 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  // Serve the built frontend whenever it exists, regardless of NODE_ENV — a
+  // misconfigured/missing NODE_ENV=production on a host (e.g. Render) must
+  // never silently fall through to dev-only Vite middleware or a blank page.
+  const serverDir = path.dirname(fileURLToPath(import.meta.url));
+  const distPath = path.join(serverDir, "dist");
+  const distIndexPath = path.join(distPath, "index.html");
+  const hasBuiltAssets = fs.existsSync(distIndexPath);
+
+  if (hasBuiltAssets) {
+    console.log(`Serving built frontend from ${distPath}`);
+    app.use(express.static(distPath));
+    // Express 5 / path-to-regexp v6+ require a named wildcard param, not bare "*"
+    app.get("/*splat", (req, res) => {
+      res.sendFile(distIndexPath);
+    });
+  } else if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const serverDir = path.dirname(fileURLToPath(import.meta.url));
-    const distPath = path.join(serverDir, "dist");
-    app.use(express.static(distPath));
-    // Express 5 / path-to-regexp v6+ require a named wildcard param, not bare "*"
-    app.get("/*splat", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    console.error(
+      `No built frontend found at ${distIndexPath}. The deploy's build command must run the production build ` +
+      `(vite build via "npm run build") before the start command runs — otherwise every route serves nothing ` +
+      `and the browser shows a blank screen.`
+    );
   }
 
   // Initialize blockchain service before starting server
