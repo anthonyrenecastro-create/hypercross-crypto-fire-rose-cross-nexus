@@ -8,13 +8,13 @@ declare global {
         emailOrSubAccount?: string;
         phoneNumber?: string;
         password: string;
-      }) => Promise<{ ok: boolean; status: number; error?: string; user?: Record<string, unknown> }>;
+      }) => Promise<{ ok: boolean; status: number; error?: string; message?: string; user?: Record<string, unknown> }>;
       authSignin: (payload: {
         method: 'email' | 'phone';
         emailOrSubAccount?: string;
         phoneNumber?: string;
         password: string;
-      }) => Promise<{ ok: boolean; status: number; error?: string; user?: Record<string, unknown> }>;
+      }) => Promise<{ ok: boolean; status: number; error?: string; message?: string; user?: Record<string, unknown> }>;
       dbGetAssets: (orgId: string) => Promise<Array<Record<string, unknown>>>;
       dbCreateAsset: (data: Record<string, unknown>) => Promise<Record<string, unknown>>;
       dbGetInfo: () => Promise<{ path: string }>;

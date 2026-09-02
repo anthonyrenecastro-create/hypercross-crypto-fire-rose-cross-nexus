@@ -210,7 +210,7 @@ export default function App() {
     }
   };
 
-  const initiateOAuthFlow = async (provider: "stripe" | "paypal") => {
+  const initiateOAuthFlow = async (provider: "stripe" | "paypal" | "bank-link") => {
     try {
       const res = await fetch(`/api/oauth/authorize?provider=${provider}&plan=${selectedPlan || 'starter'}`);
       const data = await res.json().catch(() => ({}));
@@ -243,34 +243,6 @@ export default function App() {
       }
     } catch (err: any) {
       setPaymentsError(err?.message || "Failed to start OAuth flow");
-    }
-  };
-
-  const initiatePlaidLink = async () => {
-    try {
-      const res = await fetch(`/api/oauth/authorize?provider=bank-link&plan=${selectedPlan || 'starter'}`);
-      const data = await res.json().catch(() => ({}));
-      
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to initialize Plaid Link");
-      }
-
-      // In production, initialize Plaid Link SDK here
-      // For now, just load a simulated success
-      console.log("Plaid Link initialized:", data);
-      // Simulated Plaid exchange
-      setTimeout(() => {
-        fetch("/api/oauth/plaid/exchange", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            publicToken: data.linkToken || "test_public_token_" + Date.now(),
-            userId: "user_default",
-          }),
-        }).then(() => loadPaymentConnections());
-      }, 2000);
-    } catch (err: any) {
-      setPaymentsError(err?.message || "Failed to initialize bank link");
     }
   };
 
@@ -411,72 +383,6 @@ export default function App() {
     if (!isLoggedIn) return;
     loadPaymentConnections();
   }, [isLoggedIn]);
-
-  const executeTrade = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setTradeError(null);
-    setTradeSuccess(null);
-
-    if (!selectedAccountId) {
-      setTradeError("Select a linked account.");
-      return;
-    }
-
-    const quantity = Number(tradeQuantity);
-    const price = Number(tradePrice);
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      setTradeError("Quantity must be greater than zero.");
-      return;
-    }
-    if (!Number.isFinite(price) || price <= 0) {
-      setTradeError("Price must be greater than zero.");
-      return;
-    }
-
-    try {
-      setTrading(true);
-      const res = await fetch("/api/paper/trades/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accountId: selectedAccountId,
-          instrument: tradeInstrument,
-          side: tradeSide,
-          quantity,
-          price,
-        }),
-      });
-
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setTradeError(payload?.error ?? "Trade execution failed.");
-        return;
-      }
-
-      setTradeSuccess(`[PAPER TRADING — NO REAL ASSETS] ${tradeSide} ${quantity} ${tradeInstrument} filled at ${price.toLocaleString()}.`);
-
-      if (payload?.account?.id) {
-        setLinkedAccounts((prev) => prev.map((acc) => {
-          if (acc.id !== payload.account.id) return acc;
-          const balances = payload.account.balances || acc.balances;
-          const totalUsd = Object.entries(balances).reduce((sum: number, [asset, amt]) => {
-            if (asset === "USD" || asset === "USDT") return sum + Number(amt || 0);
-            return sum;
-          }, 0);
-          return { ...acc, balances, totalUsd };
-        }));
-      }
-
-      if (payload?.trade) {
-        setRecentTrades((prev) => [payload.trade, ...prev].slice(0, 8));
-      }
-    } catch (err) {
-      console.error("Trade execution error:", err);
-      setTradeError("Unable to reach trade execution service.");
-    } finally {
-      setTrading(false);
-    }
-  };
 
   useEffect(() => {
     // Chainstack is the sole blockchain provider; no legacy fallback on failure.
@@ -718,7 +624,7 @@ export default function App() {
               onDisconnect={disconnectPaymentProvider}
               plan={selectedPlan || 'starter'}
               onInitiateOAuth={initiateOAuthFlow}
-              onInitiatePlaid={initiatePlaidLink}
+              onInitiateBankLink={() => initiateOAuthFlow("bank-link")}
             />
           </div>
         )}
@@ -818,65 +724,19 @@ export default function App() {
               <CardHeader>
                 <CardTitle className="text-lg font-medium text-white/90 flex items-center gap-2">
                   <Send className="h-5 w-5 text-[#1500ff]" />
-                  Execute Trade
+                  Live Trading
                 </CardTitle>
                 <CardDescription className="text-white/55">
-                  Route orders from the main dashboard against linked balances.
+                  On-chain swaps are signed by your connected wallet.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <form onSubmit={executeTrade} className="space-y-3">
-                  <div className="space-y-2">
-                    <Label className="text-white/70">Linked Account</Label>
-                    <select
-                      value={selectedAccountId}
-                      onChange={(e) => setSelectedAccountId(e.target.value)}
-                      className="w-full h-10 rounded-md bg-black/40 border border-white/10 px-3 text-sm text-white"
-                    >
-                      {linkedAccounts.map((account) => (
-                        <option key={account.id} value={account.id} className="bg-black text-white">
-                          {account.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label className="text-white/70">Instrument</Label>
-                      <Input value={tradeInstrument} onChange={(e) => setTradeInstrument(e.target.value.toUpperCase())} className="bg-black/50 border-white/10" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-white/70">Side</Label>
-                      <select
-                        value={tradeSide}
-                        onChange={(e) => setTradeSide(e.target.value as "BUY" | "SELL")}
-                        className="w-full h-10 rounded-md bg-black/40 border border-white/10 px-3 text-sm text-white"
-                      >
-                        <option value="BUY" className="bg-black text-white">BUY</option>
-                        <option value="SELL" className="bg-black text-white">SELL</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label className="text-white/70">Quantity</Label>
-                      <Input type="number" min="0" step="0.00000001" value={tradeQuantity} onChange={(e) => setTradeQuantity(e.target.value)} className="bg-black/50 border-white/10" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-white/70">Price</Label>
-                      <Input type="number" min="0" step="0.01" value={tradePrice} onChange={(e) => setTradePrice(e.target.value)} className="bg-black/50 border-white/10" />
-                    </div>
-                  </div>
-
-                  {tradeError && <p className="text-sm text-red-400">{tradeError}</p>}
-                  {tradeSuccess && <p className="text-sm text-green-400">{tradeSuccess}</p>}
-
-                  <Button type="submit" disabled={trading || linkedAccounts.length === 0} className="w-full bg-gradient-to-r from-[#1500ff] to-[#c300ff] hover:opacity-90">
-                    {trading ? "Executing..." : `Execute ${tradeSide}`}
+                <div className="space-y-3">
+                  <p className="text-sm text-white/60">The previous dashboard form used a local paper ledger and did not submit transactions.</p>
+                  <Button type="button" onClick={() => setActivePage('swap')} className="w-full bg-gradient-to-r from-[#1500ff] to-[#c300ff] hover:opacity-90">
+                    Open Live Swap
                   </Button>
-                </form>
+                </div>
 
                 <div className="border-t border-white/10 pt-3">
                   <p className="text-xs text-white/50 mb-2 uppercase tracking-wider">Recent Executions</p>
@@ -1022,6 +882,7 @@ export default function App() {
 }
 
 function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, data: any }) {
+  const { connect, connectors, isPending: isConnecting } = useConnect();
   const [loginMethod, setLoginMethod] = useState<'form' | 'qr'>('form');
   const [authTab, setAuthTab] = useState<'email' | 'phone'>('email');
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
@@ -1031,6 +892,12 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const connectInjectedWallet = () => {
+    const injectedConnector = connectors.find((connector) => connector.id === "injected") ?? connectors[0];
+    if (!injectedConnector) return;
+    connect({ connector: injectedConnector });
+  };
 
   const featureHighlights = [
     "Chainstack-native EVM connectivity with real-time RPC health status",
@@ -1645,7 +1512,7 @@ function PaymentSettingsPage({
   onDisconnect,
   plan = 'starter',
   onInitiateOAuth,
-  onInitiatePlaid,
+  onInitiateBankLink,
 }: {
   connections: PaymentConnection[];
   loading: boolean;
@@ -1655,7 +1522,7 @@ function PaymentSettingsPage({
   onDisconnect: (provider: PaymentProvider) => Promise<void>;
   plan?: PlanTier;
   onInitiateOAuth?: (provider: "stripe" | "paypal") => Promise<void>;
-  onInitiatePlaid?: () => Promise<void>;
+  onInitiateBankLink?: () => Promise<void>;
 }) {
   const [stripeAccountRef, setStripeAccountRef] = useState("");
   const [bankAccountRef, setBankAccountRef] = useState("");
@@ -1677,7 +1544,7 @@ function PaymentSettingsPage({
   const byProvider = new Map(connections.map((conn) => [conn.provider, conn]));
 
   const stripe = byProvider.get("stripe");
-  const bank = byProvider.get("bank-link");
+  const bank = byProvider.get("bank-link") ?? byProvider.get("stripe");
 
   const isStripeAllowed = allowedProviders.includes("stripe");
   const isBankAllowed = allowedProviders.includes("bank-link");
@@ -1720,15 +1587,15 @@ function PaymentSettingsPage({
     }
   };
 
-  const handlePlaidInitiate = async () => {
+  const handleBankLinkInitiate = async () => {
     try {
       setActionError(null);
       setBusyProvider("bank-link");
-      if (onInitiatePlaid) {
-        await onInitiatePlaid();
+      if (onInitiateBankLink) {
+        await onInitiateBankLink();
       }
     } catch (err: any) {
-      setActionError(err?.message ?? "Plaid initialization failed");
+      setActionError(err?.message ?? "Stripe bank-link authorization failed");
     } finally {
       setBusyProvider(null);
     }
@@ -1858,7 +1725,7 @@ function PaymentSettingsPage({
               </span>
               {!isBankAllowed && <span className="text-xs px-2 py-1 rounded bg-purple-500/20 text-purple-300 font-normal">Enterprise</span>}
             </CardTitle>
-            <CardDescription className="text-white/50">Connect ACH/open-banking account rails via Plaid.</CardDescription>
+            <CardDescription className="text-white/50">Connect your Stripe account to manage bank payouts and ACH rails through Stripe.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {!isBankAllowed ? (
@@ -1869,7 +1736,7 @@ function PaymentSettingsPage({
               <>
                 {useOAuth ? (
                   <div className="text-sm text-white/70">
-                    <p className="mb-2">Click below to authorize via Plaid Link:</p>
+                    <p className="mb-2">Authorize through Stripe Connect. Your bank account is added and verified in Stripe.</p>
                   </div>
                 ) : (
                   <>
@@ -1913,9 +1780,9 @@ function PaymentSettingsPage({
                   <Button
                     className="flex-1 bg-[#10b981] hover:bg-[#0e9f6e]"
                     disabled={loading || busyProvider === "bank-link"}
-                    onClick={() => void handlePlaidInitiate()}
+                    onClick={() => void handleBankLinkInitiate()}
                   >
-                    {busyProvider === "bank-link" ? "Linking..." : "Link Bank Account"}
+                    {busyProvider === "bank-link" ? "Authorizing..." : "Connect Bank Through Stripe"}
                   </Button>
                 ) : (
                   <Button

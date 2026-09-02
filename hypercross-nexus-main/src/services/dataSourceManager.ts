@@ -36,7 +36,12 @@ class DataSourceManager {
   }
 
   private async fetchLive(url: string, params?: Record<string, any>): Promise<any> {
-    return null; // Placeholder for future live data source integration
+    const response = await axios.get(url, { params, timeout: 10000 });
+    return response.data;
+  }
+
+  private unavailableData(source: string): never {
+    throw new Error(`LIVE_DATA_UNAVAILABLE: ${source} is not configured or returned no live data.`);
   }
 
   private toArrayPayload(data: any): any[] | null {
@@ -138,10 +143,11 @@ class DataSourceManager {
       const dbAssets = queries.assets.getByOrg.all('local-desktop-org') || [];
       const filtered = dbAssets.filter((asset: any) => asset.channel === channel);
       if (filtered.length > 0) return filtered;
-      return this.getDemoAssets(channel);
+      return this.unavailableData('asset registry');
     } catch (err) {
       console.error('Failed to fetch assets:', err);
-      return this.getDemoAssets(channel);
+      if (this.isDemoDataAllowed()) return this.getDemoAssets(channel);
+      return this.unavailableData('asset registry');
     }
   }
 
@@ -154,10 +160,11 @@ class DataSourceManager {
       const dbAssets = queries.assets.getByOrg.all('local-desktop-org') || [];
       const found = dbAssets.find((asset: any) => asset.symbol === symbol && asset.channel === channel) ?? null;
       if (found) return found;
-      return this.getDemoAssets(channel).find((asset) => asset.symbol === symbol) ?? null;
+      return null;
     } catch (err) {
       console.error('Failed to fetch asset:', err);
-      return this.getDemoAssets(channel).find((asset) => asset.symbol === symbol) ?? null;
+      if (this.isDemoDataAllowed()) return this.getDemoAssets(channel).find((asset) => asset.symbol === symbol) ?? null;
+      return null;
     }
   }
 
@@ -166,7 +173,7 @@ class DataSourceManager {
     try {
       const coingecko = this.httpClients.get('coingecko');
       if (!coingecko) {
-        return this.getDemoMarketPrices(symbols);
+        return this.unavailableData('CoinGecko market data');
       }
 
       const ids = symbols.map(s => s.toLowerCase()).join(',');
@@ -182,62 +189,56 @@ class DataSourceManager {
       return res.data;
     } catch (err) {
       console.error('Failed to fetch market prices:', err);
-      return this.getDemoMarketPrices(symbols);
+      if (this.isDemoDataAllowed()) return this.getDemoMarketPrices(symbols);
+      return this.unavailableData('CoinGecko market data');
     }
   }
 
   async getLiveOrderBook(instrument: string): Promise<any> {
-    return {
-      bids: [
-        { price: 2500.50, quantity: 1.5, side: "buy" },
-        { price: 2501.00, quantity: 2.3, side: "buy" }
-      ],
-      asks: [
-        { price: 2502.00, quantity: 0.8, side: "sell" },
-        { price: 2502.50, quantity: 1.2, side: "sell" }
-      ],
-      timestamp: new Date().toISOString(),
-      simulated: true
-    };
+    return this.unavailableData(`order book for ${instrument}`);
   }
 
   // ── SPORTS DATA ──
   async getLiveSportsEvents(): Promise<any[]> {
     try {
-      return this.getDemoSportsEvents();
+      return this.unavailableData('sports data provider');
     } catch (err) {
       console.error('Failed to fetch sports events:', err);
-      return this.getDemoSportsEvents();
+      if (this.isDemoDataAllowed()) return this.getDemoSportsEvents();
+      return this.unavailableData('sports data provider');
     }
   }
 
   // ── MINING ──
   async getMiningPoolStats(): Promise<any[]> {
     try {
-      return this.getDemoMiningPools();
+      return this.unavailableData('mining statistics provider');
     } catch (err) {
       console.error('Failed to fetch mining stats:', err);
-      return this.getDemoMiningPools();
+      if (this.isDemoDataAllowed()) return this.getDemoMiningPools();
+      return this.unavailableData('mining statistics provider');
     }
   }
 
   // ── RWA ──
   async getRWAssets(channel: string = 'rwa-channel'): Promise<any[]> {
     try {
-      return this.getDemoRWAs();
+      return this.unavailableData(`RWA data source for ${channel}`);
     } catch (err) {
       console.error('Failed to fetch RWAs:', err);
-      return this.getDemoRWAs();
+      if (this.isDemoDataAllowed()) return this.getDemoRWAs();
+      return this.unavailableData(`RWA data source for ${channel}`);
     }
   }
 
   // ── NFT ──
   async getNFTs(channel: string = 'nft-channel'): Promise<any[]> {
     try {
-      return this.getDemoNFTs();
+      return this.unavailableData(`NFT data source for ${channel}`);
     } catch (err) {
       console.error('Failed to fetch NFTs:', err);
-      return this.getDemoNFTs();
+      if (this.isDemoDataAllowed()) return this.getDemoNFTs();
+      return this.unavailableData(`NFT data source for ${channel}`);
     }
   }
 }

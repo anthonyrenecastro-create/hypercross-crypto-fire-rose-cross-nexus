@@ -157,7 +157,7 @@ type PlanTier = "starter" | "pro" | "enterprise" | "enterprise_deluxe";
 const PLAN_PAYMENT_FEATURES: Record<PlanTier, PaymentProvider[]> = {
   starter: ["stripe"],
   pro: ["stripe"],
-  enterprise: ["stripe"],
+  enterprise: ["stripe", "bank-link"],
   enterprise_deluxe: ["stripe"],
 };
 
@@ -1240,17 +1240,12 @@ async function startServer() {
         provider: "paypal",
       });
     } else if (providerStr === "bank-link") {
-      generatePlaidLinkToken(req.query.userId as string || "user_default").then((token) => {
-        res.json({
-          provider: "bank-link",
-          linkToken: token,
-          plaidConfig: {
-            clientId: OAUTH_CONFIG.plaid.clientId,
-            env: OAUTH_CONFIG.plaid.environment,
-          },
-        });
-      }).catch((err) => {
-        res.status(500).json({ error: err?.message || "Failed to generate Plaid token" });
+      const state = generateOAuthState();
+      res.json({
+        authUrl: generateStripeConnectAuthUrl(state),
+        state,
+        provider: "bank-link",
+        message: "Authorize Stripe Connect, then add and verify the bank account in Stripe.",
       });
     } else {
       res.status(400).json({
@@ -1298,6 +1293,39 @@ async function startServer() {
         ok: false,
         error: err?.message || "Failed to process Stripe callback",
       });
+    }
+  });
+
+  // Stripe redirects the browser with GET after Connect authorization.
+  app.get("/api/oauth/stripe/callback", async (req, res) => {
+    try {
+      const code = String(req.query.code ?? "").trim();
+      const state = String(req.query.state ?? "").trim();
+      if (!code) {
+        return res.status(400).send("Stripe authorization was not completed.");
+      }
+
+      const tokenData = await exchangeOAuthCode("stripe", code);
+      const tokenId = `oauth_stripe_${Date.now()}`;
+      storeEncryptedOAuthToken(
+        "stripe",
+        tokenData.accessToken,
+        tokenData.refreshToken || null,
+        tokenData.expiresIn ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString() : null,
+        tokenData.scope,
+        "Bearer",
+        { state, linkedAt: new Date().toISOString() }
+      );
+      queries.paymentConnections.upsert.run(
+        "stripe",
+        "connected",
+        code,
+        JSON.stringify({ oauthTokenId: tokenId, method: "oauth" })
+      );
+
+      res.type("html").send(`<!doctype html><title>Stripe connected</title><p>Stripe connected successfully. You can close this window.</p><script>window.close()</script>`);
+    } catch (err: any) {
+      res.status(500).send(`Stripe authorization failed: ${err?.message || "unknown error"}`);
     }
   });
 
