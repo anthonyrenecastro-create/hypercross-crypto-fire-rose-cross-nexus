@@ -6,7 +6,18 @@
     <title>Hyper-Cross Nexus</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root" style="min-height:100vh;background:#050505;color:#fff;font-family:system-ui,sans-serif;padding:32px">
+      <p id="bootstrap-status">Loading Hyper-Cross Nexus...</p>
+    </div>
+    <script>
+      window.setTimeout(function () {
+        var status = document.getElementById("bootstrap-status");
+        if (status) {
+          status.textContent = "The application did not start. Check the browser console and verify the deployed JavaScript assets are reachable.";
+          status.style.color = "#fca5a5";
+        }
+      }, 8000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
