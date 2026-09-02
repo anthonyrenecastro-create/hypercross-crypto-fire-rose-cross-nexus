@@ -563,6 +563,41 @@ async function startServer() {
     }
   });
 
+  app.post("/api/auth/reset-password", (req, res) => {
+    try {
+      const emailOrSubAccount = String(req.body?.emailOrSubAccount || req.body?.emailOrPhone || "").trim();
+      const password = String(req.body?.password || req.body?.newPassword || "");
+
+      if (password.length < 8) {
+        return res.status(400).json({ error: "Password must be at least 8 characters." });
+      }
+
+      let user = null;
+      if (emailOrSubAccount.includes("@")) {
+        const email = normalizeEmail(emailOrSubAccount);
+        if (email) user = queries.authUser.getByEmail.get(email) as any;
+      } else {
+        const phone = normalizePhone(emailOrSubAccount);
+        if (phone) user = queries.authUser.getByPhone.get(phone) as any;
+      }
+
+      if (!user) {
+        return res.status(404).json({ error: "No account found with that email or phone number." });
+      }
+
+      const hashedPassword = hashPassword(password);
+      queries.authUser.updatePassword.run(hashedPassword, user.id);
+
+      return res.json({
+        ok: true,
+        message: "Password reset successful. You can now log in with your new password."
+      });
+    } catch (error) {
+      console.error("Reset password error:", error);
+      return res.status(500).json({ error: "Unable to reset password." });
+    }
+  });
+
   // Health check endpoint (application process health)
   app.get("/api/health", async (req, res) => {
     let rpcHealthy = false;

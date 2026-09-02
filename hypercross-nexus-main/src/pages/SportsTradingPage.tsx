@@ -25,8 +25,54 @@ export default function SportsTradingPage() {
   const [pick, setPick] = useState<"home" | "away" | "draw" | null>(null);
   const [stake, setStake] = useState("");
   const [leverage, setLeverage] = useState("1");
+  const [isPlacing, setIsPlacing] = useState(false);
+  const [tradeError, setTradeError] = useState<string | null>(null);
 
-  // Fetch live sports events from API
+  const handlePlaceTrade = async () => {
+    if (!selectedEvent || !pick || !stake) {
+      setTradeError("Please select an event, pick, and enter a stake.");
+      return;
+    }
+    try {
+      setIsPlacing(true);
+      setTradeError(null);
+      const potentialPayout = (parseFloat(stake) * (pick === "home" ? selectedEvent.homeOdds : pick === "away" ? selectedEvent.awayOdds : (selectedEvent.drawOdds ?? 1)) * parseFloat(leverage)).toFixed(4);
+      const response = await fetch("/api/paper/trades/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tradeType: "SPORTS_PREDICTION",
+          event: `${selectedEvent.home} vs ${selectedEvent.away}`,
+          pick: pick === "home" ? selectedEvent.home : pick === "away" ? selectedEvent.away : "Draw",
+          stake: stake,
+          odds: pick === "home" ? selectedEvent.homeOdds : pick === "away" ? selectedEvent.awayOdds : selectedEvent.drawOdds,
+          leverage: leverage,
+          potentialPayout: potentialPayout,
+          channel: "sports-trading"
+        })
+      });
+      if (!response.ok) throw new Error("Failed to place trade");
+      const newPosition = {
+        event: `${selectedEvent.home} vs ${selectedEvent.away}`,
+        pick: pick === "home" ? selectedEvent.home : pick === "away" ? selectedEvent.away : "Draw",
+        stake: `${stake} ETH`,
+        odds: pick === "home" ? selectedEvent.homeOdds : pick === "away" ? selectedEvent.awayOdds : (selectedEvent.drawOdds ?? 1),
+        pnl: "+0 ETH",
+        status: "Open"
+      };
+      setMyPositions(p => [...p, newPosition]);
+      setSelectedEvent(null);
+      setPick(null);
+      setStake("");
+      setLeverage("1");
+      setTimeout(() => setTradeError(null), 2500);
+    } catch (err: any) {
+      setTradeError(err?.message ?? "Failed to place trade. Try again.");
+    } finally {
+      setIsPlacing(false);
+    }
+  };
+
   useEffect(() => {
     const fetchEvents = async () => {
       try {
@@ -57,10 +103,6 @@ export default function SportsTradingPage() {
     const interval = setInterval(fetchEvents, 5000);
     return () => clearInterval(interval);
   }, []);
-
-  const payout = selectedEvent && pick && stake
-    ? (parseFloat(stake) * (pick === "home" ? selectedEvent.homeOdds : pick === "away" ? selectedEvent.awayOdds : (selectedEvent.drawOdds ?? 1)) * parseFloat(leverage)).toFixed(4)
-    : "—";
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -124,6 +166,11 @@ export default function SportsTradingPage() {
           <Card className="glass-panel border border-yellow-500/20">
             <CardHeader><CardTitle className="text-white text-base">Place Trade</CardTitle></CardHeader>
             <CardContent className="space-y-4">
+              {tradeError && (
+                <div className="p-3 text-sm rounded bg-red-500/10 border border-red-500/30 text-red-400">
+                  ⚠ {tradeError}
+                </div>
+              )}
               {selectedEvent ? (
                 <>
                   <div className="p-3 rounded-lg bg-white/5 border border-white/10">
@@ -133,19 +180,19 @@ export default function SportsTradingPage() {
                   </div>
                   <div className="space-y-2">
                     <Label className="text-white/70">Stake (ETH)</Label>
-                    <Input value={stake} onChange={e => setStake(e.target.value)} placeholder="0.5" className="bg-black/50 border-white/10 text-white placeholder:text-white/30 focus-visible:ring-yellow-500" />
+                    <Input disabled={isPlacing} value={stake} onChange={e => setStake(e.target.value)} placeholder="0.5" className="bg-black/50 border-white/10 text-white placeholder:text-white/30 focus-visible:ring-yellow-500" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-white/70">Leverage <span className="text-white/30">(1–5x)</span></Label>
-                    <input type="range" min={1} max={5} value={leverage} onChange={e => setLeverage(e.target.value)} className="w-full accent-yellow-500" />
+                    <input disabled={isPlacing} type="range" min={1} max={5} value={leverage} onChange={e => setLeverage(e.target.value)} className="w-full accent-yellow-500" />
                     <p className="text-yellow-400 text-sm font-medium text-center">{leverage}x</p>
                   </div>
                   <div className="p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20">
                     <p className="text-white/50 text-xs mb-1">Potential Payout</p>
-                    <p className="text-yellow-400 font-bold text-lg">{payout} ETH</p>
+                    <p className="text-yellow-400 font-bold text-lg">{stake && pick ? (parseFloat(stake) * (pick === "home" ? selectedEvent.homeOdds : pick === "away" ? selectedEvent.awayOdds : (selectedEvent.drawOdds ?? 1)) * parseFloat(leverage)).toFixed(4) : "—"} ETH</p>
                   </div>
-                  <Button disabled={!pick || !stake} className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-semibold border-0 disabled:opacity-40">
-                    Place Trade (Demo)
+                  <Button onClick={handlePlaceTrade} disabled={!pick || !stake || isPlacing} className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-semibold border-0 disabled:opacity-40">
+                    {isPlacing ? "Placing Trade..." : "Place Trade (Demo)"}
                   </Button>
                 </>
               ) : (
@@ -157,19 +204,23 @@ export default function SportsTradingPage() {
           <Card className="glass-panel border border-white/10">
             <CardHeader><CardTitle className="text-white text-base">Open Positions</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              {myPositions.map((p, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                  <div>
-                    <p className="text-white text-sm font-medium">{p.pick}</p>
-                    <p className="text-white/40 text-xs">{p.event}</p>
-                    <p className="text-white/50 text-xs">Stake: {p.stake} @ {p.odds}</p>
+              {myPositions.length === 0 ? (
+                <p className="text-white/40 text-sm text-center py-4">No open positions yet.</p>
+              ) : (
+                myPositions.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                    <div>
+                      <p className="text-white text-sm font-medium">{p.pick}</p>
+                      <p className="text-white/40 text-xs">{p.event}</p>
+                      <p className="text-white/50 text-xs">Stake: {p.stake} @ {p.odds}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-bold text-sm ${p.pnl.startsWith("+") ? "text-green-400" : "text-red-400"}`}>{p.pnl}</p>
+                      <Badge variant="outline" className="border-blue-500/40 text-blue-400 bg-blue-500/10 text-xs mt-1">{p.status}</Badge>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className={`font-bold text-sm ${p.pnl.startsWith("+") ? "text-green-400" : "text-red-400"}`}>{p.pnl}</p>
-                    <Badge variant="outline" className="border-blue-500/40 text-blue-400 bg-blue-500/10 text-xs mt-1">{p.status}</Badge>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </CardContent>
           </Card>
         </div>

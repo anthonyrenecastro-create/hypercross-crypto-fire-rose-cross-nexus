@@ -388,6 +388,9 @@ export const queries = {
     touchLogin: db.prepare(`
       UPDATE authUsers SET lastLogin = CURRENT_TIMESTAMP WHERE id = ?
     `),
+    updatePassword: db.prepare(`
+      UPDATE authUsers SET passwordHash = ? WHERE id = ?
+    `),
   },
 
   user: {

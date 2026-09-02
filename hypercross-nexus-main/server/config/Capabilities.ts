@@ -22,11 +22,14 @@ export async function getCapabilities(env: NodeJS.ProcessEnv = process.env): Pro
 
   const backendStatus: CapabilityStatus = "LIVE";
 
-  // Swap is only live if RPC is healthy and ZEROX_API_KEY is configured
+  // Swap becomes truly live only when the RPC is healthy and the 0x key is configured.
+  // In local development, a missing key should remain a non-fatal development-only signal
+  // rather than the hard "unavailable" state shown to users in a dev environment.
   const hasZeroExKey = !!env.ZEROX_API_KEY?.trim();
+  const isLocalDev = env.NODE_ENV !== "production";
   const swapStatus: CapabilityStatus = (rpcHealthy && hasZeroExKey)
     ? "LIVE"
-    : (isDemo && allowDemo ? "DEVELOPMENT_ONLY" : "UNAVAILABLE");
+    : (isLocalDev ? "DEVELOPMENT_ONLY" : (isDemo && allowDemo ? "DEVELOPMENT_ONLY" : "UNAVAILABLE"));
 
   // Digitial Asset Issuance using web client or desktop connection
   const assetIssuanceStatus: CapabilityStatus = rpcHealthy

@@ -167,6 +167,22 @@ export default function App() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => {
+        if (payload?.ok && payload?.user) {
+          setIsLoggedIn(true);
+          const email = payload.user.email;
+          if (email) {
+            setUserEmail(email);
+            window.localStorage.setItem('hcx-user-email', email);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const loadPaymentConnections = async () => {
     try {
       setPaymentsLoading(true);
@@ -992,10 +1008,11 @@ export default function App() {
 function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, data: any }) {
   const [loginMethod, setLoginMethod] = useState<'form' | 'qr'>('form');
   const [authTab, setAuthTab] = useState<'email' | 'phone'>('email');
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
   const [emailOrSubAccount, setEmailOrSubAccount] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -1016,13 +1033,32 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
     setPassword('');
   };
 
-  const switchAuthMode = (mode: 'signin' | 'signup') => {
+  const switchAuthMode = (mode: 'signin' | 'signup' | 'forgot') => {
     setAuthMode(mode);
     setLoginError(null);
     setPassword('');
+    setConfirmPassword('');
   };
 
   const submitAuth = async () => {
+    if (authMode === 'forgot') {
+      const response = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emailOrPhone: authTab === 'email' ? emailOrSubAccount : phoneNumber,
+          newPassword: password,
+        }),
+      });
+      const payloadJson = await response.json().catch(() => ({}));
+      return {
+        ok: response.ok,
+        status: response.status,
+        error: payloadJson?.error,
+        message: payloadJson?.message,
+      };
+    }
+
     const payload = {
       method: authTab,
       emailOrSubAccount,
@@ -1066,8 +1102,13 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
       if (!password.trim()) { setLoginError('Enter your password.'); return; }
     }
 
-    if (authMode === 'signup' && password.trim().length < 8) {
+    if ((authMode === 'signup' || authMode === 'forgot') && password.trim().length < 8) {
       setLoginError('Use at least 8 characters for your password.');
+      return;
+    }
+
+    if (authMode === 'forgot' && password !== confirmPassword) {
+      setLoginError('Passwords do not match.');
       return;
     }
 
@@ -1080,6 +1121,12 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
           return;
         }
         setLoginError(result?.error || 'Authentication failed.');
+        return;
+      }
+
+      if (authMode === 'forgot') {
+        alert(result.message || 'Password reset successful! You can now sign in with your new password.');
+        switchAuthMode('signin');
         return;
       }
 
@@ -1200,14 +1247,16 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
             <div className="px-6 pt-7 pb-5 pr-14">
               <h2 className="text-2xl font-bold text-white tracking-tight">
                 {loginMethod === 'form'
-                  ? (authMode === 'signin' ? 'Sign in to your account' : 'Create your account')
+                  ? (authMode === 'signin' ? 'Sign in to your account' : authMode === 'signup' ? 'Create your account' : 'Reset your password')
                   : 'Scan to sign in'}
               </h2>
               <p className="text-white/40 text-sm mt-1">
                 {loginMethod === 'form'
                   ? (authMode === 'signin'
                     ? 'Welcome back to Hyper-Cross Nexus'
-                    : 'Set up your Hyper-Cross account with email or phone')
+                    : authMode === 'signup'
+                    ? 'Set up your Hyper-Cross account with email or phone'
+                    : 'Enter your email or phone number to set a new password')
                   : 'Open the mobile app and scan the code below'}
               </p>
             </div>
@@ -1374,10 +1423,14 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
                         </div>
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <Label htmlFor="password" className="text-white/60 text-sm">Password</Label>
-                            <button type="button" className="text-xs text-[#c300ff] hover:text-[#ffae00] transition-colors">
-                              Forgot password?
-                            </button>
+                            <Label htmlFor="password" className="text-white/60 text-sm">
+                              {authMode === 'forgot' ? 'New Password' : 'Password'}
+                            </Label>
+                            {authMode !== 'forgot' && (
+                              <button type="button" onClick={() => switchAuthMode('forgot')} className="text-xs text-[#c300ff] hover:text-[#ffae00] transition-colors">
+                                Forgot password?
+                              </button>
+                            )}
                           </div>
                           <div className="relative">
                             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
@@ -1387,11 +1440,28 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
                               value={password}
                               onChange={(e) => setPassword(e.target.value)}
                               autoComplete="current-password"
-                              placeholder="Enter password"
+                              placeholder={authMode === 'forgot' ? "Enter new password" : "Enter password"}
                               className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/20 focus-visible:ring-[#c300ff] focus-visible:border-[#c300ff]/50"
                             />
                           </div>
                         </div>
+                        {authMode === 'forgot' && (
+                          <div className="space-y-1.5">
+                            <Label htmlFor="confirm-password" className="text-white/60 text-sm">Confirm New Password</Label>
+                            <div className="relative">
+                              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
+                              <Input
+                                id="confirm-password"
+                                type="password"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                autoComplete="new-password"
+                                placeholder="Confirm new password"
+                                className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/20 focus-visible:ring-[#c300ff] focus-visible:border-[#c300ff]/50"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -1412,10 +1482,14 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
                         </div>
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <Label htmlFor="password-phone" className="text-white/60 text-sm">Password</Label>
-                            <button type="button" className="text-xs text-[#c300ff] hover:text-[#ffae00] transition-colors">
-                              Forgot password?
-                            </button>
+                            <Label htmlFor="password-phone" className="text-white/60 text-sm">
+                              {authMode === 'forgot' ? 'New Password' : 'Password'}
+                            </Label>
+                            {authMode !== 'forgot' && (
+                              <button type="button" onClick={() => switchAuthMode('forgot')} className="text-xs text-[#c300ff] hover:text-[#ffae00] transition-colors">
+                                Forgot password?
+                              </button>
+                            )}
                           </div>
                           <div className="relative">
                             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
@@ -1425,11 +1499,28 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
                               value={password}
                               onChange={(e) => setPassword(e.target.value)}
                               autoComplete="current-password"
-                              placeholder="Enter password"
+                              placeholder={authMode === 'forgot' ? "Enter new password" : "Enter password"}
                               className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/20 focus-visible:ring-[#c300ff] focus-visible:border-[#c300ff]/50"
                             />
                           </div>
                         </div>
+                        {authMode === 'forgot' && (
+                          <div className="space-y-1.5">
+                            <Label htmlFor="confirm-password-phone" className="text-white/60 text-sm">Confirm New Password</Label>
+                            <div className="relative">
+                              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
+                              <Input
+                                id="confirm-password-phone"
+                                type="password"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                autoComplete="new-password"
+                                placeholder="Confirm new password"
+                                className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/20 focus-visible:ring-[#c300ff] focus-visible:border-[#c300ff]/50"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1448,18 +1539,18 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
                         hover:opacity-90 active:opacity-80 disabled:opacity-55 disabled:cursor-not-allowed"
                     >
                       {isSubmitting
-                        ? (authMode === 'signin' ? 'Signing in...' : 'Creating account...')
-                        : (authMode === 'signin' ? 'Sign in' : 'Create account')}
+                        ? (authMode === 'signin' ? 'Signing in...' : authMode === 'signup' ? 'Creating account...' : 'Resetting password...')
+                        : (authMode === 'signin' ? 'Sign in' : authMode === 'signup' ? 'Create account' : 'Reset Password')}
                       {!isSubmitting && <ArrowRight className="h-4 w-4" />}
                     </button>
                   </form>
 
                   <div className="mt-4 text-center text-xs text-white/45">
-                    {authMode === 'signin' ? "Don't have an account?" : 'Already have an account?'}
+                    {authMode === 'signin' ? "Don't have an account?" : authMode === 'signup' ? 'Already have an account?' : 'Remembered your password?'}
                     {" "}
                     <button
                       type="button"
-                      onClick={() => switchAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
+                      onClick={() => switchAuthMode(authMode === 'signin' ? 'signup' : authMode === 'signup' ? 'signin' : 'signin')}
                       className="text-[#c300ff] hover:text-[#ffae00] transition-colors"
                     >
                       {authMode === 'signin' ? 'Sign up' : 'Sign in'}

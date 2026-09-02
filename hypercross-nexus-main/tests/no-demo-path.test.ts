@@ -51,6 +51,16 @@ test("3. Explicit development demo mode can still work when configured", async (
   assert.equal(caps.rwaInfrastructure, "DEVELOPMENT_ONLY");
 });
 
+test("3a. Local development without a zero-ex key stays development-only instead of unavailable", async () => {
+  const devEnv = {
+    NODE_ENV: "development",
+    APP_DATA_MODE: "live",
+    ALLOW_DEMO_DATA: "false",
+  };
+  const caps = await getCapabilities(devEnv);
+  assert.equal(caps.swap, "DEVELOPMENT_ONLY");
+});
+
 test("4. Network health is dynamic and not hardcoded optimal", async () => {
   // Disconnected/not initialized state should report degraded/unhealthy status
   const status = await blockchainService.getStatus();

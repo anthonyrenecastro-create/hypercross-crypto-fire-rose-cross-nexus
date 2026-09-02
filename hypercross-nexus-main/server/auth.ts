@@ -6,7 +6,19 @@ export const AUTH_ROLES = ["OWNER", "ADMIN", "OPERATOR", "TRADER", "VIEWER"] as 
 export type AuthRole = (typeof AUTH_ROLES)[number];
 
 export const ROLE_PERMISSIONS: Record<AuthRole, string[]> = {
-  OWNER: ["manage_organization", "manage_users", "manage_blockchain", "deploy_contracts", "transfer_assets", "manage_billing"],
+  OWNER: [
+    "manage_organization",
+    "manage_users",
+    "manage_blockchain",
+    "deploy_contracts",
+    "transfer_assets",
+    "manage_billing",
+    "manage_assets",
+    "execute_permitted_trading_operations",
+    "execute_approved_transactions",
+    "manage_operational_config",
+    "create_operational_transactions"
+  ],
   ADMIN: ["manage_operational_config", "manage_assets", "execute_approved_transactions"],
   OPERATOR: ["create_operational_transactions"],
   TRADER: ["execute_permitted_trading_operations"],

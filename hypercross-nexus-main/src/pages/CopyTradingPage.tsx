@@ -24,6 +24,55 @@ export default function CopyTradingPage() {
   const [allocation, setAllocation] = useState("");
   const [maxRisk, setMaxRisk] = useState("10");
   const [tab, setTab] = useState<"leaderboard" | "following">("leaderboard");
+  const [myCopies, setMyCopies] = useState(MY_COPIES);
+  const [isCopying, setIsCopying] = useState(false);
+  const [copiedTrader, setCopiedTrader] = useState<typeof FALLBACK_TRADERS[0] | null>(null);
+
+  const handleStartCopy = async () => {
+    if (!allocation || !selected) return;
+    try {
+      setIsCopying(true);
+      const response = await fetch("/api/paper/trades/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tradeType: "COPY",
+          traderHandle: selected.handle,
+          allocation: allocation,
+          maxRisk: parseInt(maxRisk),
+          timestamp: new Date().toISOString(),
+          channel: "copy-trading"
+        })
+      });
+      if (!response.ok) throw new Error("Failed to start copying");
+      setCopiedTrader(selected);
+      setMyCopies(p => [...p, {
+        trader: selected.name,
+        allocation: `${allocation} ETH`,
+        started: new Date().toISOString().split('T')[0],
+        pnl: "+0 ETH",
+        status: "Copying"
+      }]);
+      setAllocation("");
+      setSelected(null);
+      setTimeout(() => setCopiedTrader(null), 3000);
+    } catch (err) {
+      console.error("Copy error:", err);
+    } finally {
+      setIsCopying(false);
+    }
+  };
+
+  const handleStopCopy = async (traderName: string) => {
+    try {
+      const trade = myCopies.find(c => c.trader === traderName);
+      if (!trade) return;
+      await fetch(`/api/paper/trades/${traderName}`, { method: "DELETE" }).catch(() => {});
+      setMyCopies(p => p.filter(c => c.trader !== traderName));
+    } catch (err) {
+      console.error("Stop copy error:", err);
+    }
+  };
   // Fetch live trader standings from positions API
   useEffect(() => {
     const fetchTraders = async () => {
@@ -129,9 +178,14 @@ export default function CopyTradingPage() {
                     <Label className="text-white/70">Max Risk per Trade: {maxRisk}%</Label>
                     <input type="range" min={1} max={50} value={maxRisk} onChange={e => setMaxRisk(e.target.value)} className="w-full accent-teal-500" />
                   </div>
-                  <Button disabled={!allocation} className="w-full bg-teal-600 hover:bg-teal-700 text-white border-0 disabled:opacity-40">
-                    <Copy className="h-4 w-4 mr-2" /> Start Copying (Demo)
+                  <Button onClick={handleStartCopy} disabled={!allocation || isCopying || !selected} className="w-full bg-teal-600 hover:bg-teal-700 text-white border-0 disabled:opacity-40">
+                    {isCopying ? "Starting..." : <><Copy className="h-4 w-4 mr-2" /> Start Copying (Demo)</>}
                   </Button>
+                  {copiedTrader === selected && (
+                    <div className="p-3 text-sm rounded bg-green-500/10 border border-green-500/30 text-green-400 text-center">
+                      ✓ Now copying {selected.name}!
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ) : (
@@ -145,26 +199,33 @@ export default function CopyTradingPage() {
 
       {tab === "following" && (
         <div className="space-y-3">
-          {MY_COPIES.map((c, i) => (
-            <Card key={i} className="glass-panel border border-white/10">
-              <CardContent className="p-5 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-teal-500 to-blue-500 flex items-center justify-center text-white font-bold text-sm">
-                    {c.trader[0]}
+          {myCopies.length === 0 ? (
+            <div className="text-center py-12 text-white/50">
+              <Copy className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>You are not copying any traders yet. Select one from the leaderboard to get started.</p>
+            </div>
+          ) : (
+            myCopies.map((c, i) => (
+              <Card key={i} className="glass-panel border border-white/10">
+                <CardContent className="p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-teal-500 to-blue-500 flex items-center justify-center text-white font-bold text-sm">
+                      {c.trader[0]}
+                    </div>
+                    <div>
+                      <p className="text-white font-medium">{c.trader}</p>
+                      <p className="text-white/40 text-xs">Alloc: {c.allocation} · Since {c.started}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-white font-medium">{c.trader}</p>
-                    <p className="text-white/40 text-xs">Alloc: {c.allocation} · Since {c.started}</p>
+                  <div className="text-right">
+                    <p className="text-green-400 font-bold">{c.pnl}</p>
+                    <Badge variant="outline" className="border-teal-500/40 text-teal-400 bg-teal-500/10 text-xs mt-1">{c.status}</Badge>
                   </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-green-400 font-bold">{c.pnl}</p>
-                  <Badge variant="outline" className="border-teal-500/40 text-teal-400 bg-teal-500/10 text-xs mt-1">{c.status}</Badge>
-                </div>
-                <Button variant="outline" size="sm" className="ml-4 border-red-500/30 text-red-400 hover:bg-red-500/10">Stop</Button>
-              </CardContent>
-            </Card>
-          ))}
+                  <Button onClick={() => handleStopCopy(c.trader)} variant="outline" size="sm" className="ml-4 border-red-500/30 text-red-400 hover:bg-red-500/10">Stop</Button>
+                </CardContent>
+              </Card>
+            ))
+          )}
         </div>
       )}
     </div>
