@@ -26,7 +26,9 @@ async function runHarness() {
 
   // 2. Load and initialize Blockchain Service
   await blockchainService.initialize();
+  const rpcStart = Date.now();
   const status = await blockchainService.getStatus();
+  const rpcLatencyMs = Date.now() - rpcStart;
 
   // 3. Mainnet Write Safety Interlock
   const mainnetChainIds = [1, 10, 56, 137, 8453, 42161];
@@ -41,7 +43,7 @@ async function runHarness() {
   console.log(`Connected Network: ${status.network}`);
   console.log(`Chain ID: ${status.chainId}`);
   console.log(`Latest Block Number: ${status.blockNumber}`);
-  console.log(`RPC Latency: ${status.rpcLatencyMs}ms`);
+  console.log(`RPC Latency: ${rpcLatencyMs}ms`);
   console.log(`RPC Healthy: ${status.rpcHealthy}`);
 
   if (!status.rpcHealthy) {

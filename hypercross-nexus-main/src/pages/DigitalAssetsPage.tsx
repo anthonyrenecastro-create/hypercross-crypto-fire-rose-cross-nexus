@@ -472,6 +472,8 @@ export default function DigitalAssetsPage() {
     }
   };
 
+  const isAssetIssuanceEnabled = capabilities?.digitalAssetIssuance === "LIVE" || capabilities?.digitalAssetIssuance === "DEVELOPMENT_ONLY";
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Dynamic Capability Banners */}

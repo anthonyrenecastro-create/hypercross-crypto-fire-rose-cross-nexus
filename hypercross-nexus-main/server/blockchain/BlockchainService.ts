@@ -16,7 +16,7 @@ import {
   BlockchainConnectionError,
   MainnetExecutionDisabledError,
 } from "./errors";
-import type { BlockchainProvider, ProviderConnectionStatus } from "./types";
+import type { BlockchainProvider, ProviderConnectionStatus, BlockchainTransactionRequest } from "./types";
 
 export interface TransactionRequest {
   to: string;
@@ -132,6 +132,14 @@ export class BlockchainService {
     }
 
     return this.provider.getBalance(address);
+  }
+
+  /**
+   * Submit transaction to the blockchain
+   */
+  async sendTransaction(request: BlockchainTransactionRequest): Promise<any> {
+    if (!this.provider) throw new BlockchainConnectionError("Blockchain service not initialized");
+    return this.provider.submitTransaction(request);
   }
 
   /**
