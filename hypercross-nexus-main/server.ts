@@ -255,6 +255,10 @@ async function startServer() {
       if (!origin || allowedOrigins.includes(origin) || allowedOrigins.some(ao => origin.endsWith(ao.replace(/^https?:\/\//, "")))) {
         return callback(null, true);
       }
+      // If the domain is hypercrossfinancial.com or a subdomain of it, automatically white-list it cleanly without warning.
+      if (origin.endsWith("hypercrossfinancial.com")) {
+        return callback(null, true);
+      }
       // Log origin during CORS failure of domain checks so user can trace their domain configuration.
       console.warn(`[CORS Request Blocked]: ${origin}`);
       return callback(null, true); // Fallback to allowing all requests to avoid CORS blockages
