@@ -14,14 +14,23 @@ export default defineConfig({
     },
   },
   build: {
-    // split large/duplicated dependency trees into separate chunks to ease build memory pressure
+    // let Rollup dynamically trace and split files naturally to reduce peak memory usage
     rollupOptions: {
       output: {
-        manualChunks: {
-          ethers: ['ethers'],
-          wagmi: ['wagmi', '@rainbow-me/rainbowkit', 'viem'],
-          react: ['react', 'react-dom'],
-        },
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('viem')) {
+              return 'viem';
+            }
+            if (id.includes('@rainbow-me') || id.includes('wagmi')) {
+              return 'wagmi';
+            }
+            if (id.includes('ethers')) {
+              return 'ethers';
+            }
+            return 'vendor';
+          }
+        }
       },
     },
   },
