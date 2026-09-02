@@ -14,15 +14,15 @@ function flagEnabled(value: string | undefined, defaultValue: boolean): boolean 
 
 export function getFeatureFlags(env: NodeJS.ProcessEnv = process.env) {
   return {
-    rwa: flagEnabled(env.FEATURE_RWA, false),
-    nft: flagEnabled(env.FEATURE_NFT, false),
-    launchpad: flagEnabled(env.FEATURE_LAUNCHPAD, false),
-    copyTrading: flagEnabled(env.FEATURE_COPY_TRADING, false),
-    sports: flagEnabled(env.FEATURE_SPORTS, false),
-    derivatives: flagEnabled(env.FEATURE_DERIVATIVES, false),
-    mining: flagEnabled(env.FEATURE_MINING, false),
-    banking: flagEnabled(env.FEATURE_BANKING, false),
-    custody: flagEnabled(env.FEATURE_CUSTODY, false),
+    rwa: flagEnabled(env.FEATURE_RWA, true),
+    nft: flagEnabled(env.FEATURE_NFT, true),
+    launchpad: flagEnabled(env.FEATURE_LAUNCHPAD, true),
+    copyTrading: flagEnabled(env.FEATURE_COPY_TRADING, true),
+    sports: flagEnabled(env.FEATURE_SPORTS, true),
+    derivatives: flagEnabled(env.FEATURE_DERIVATIVES, true),
+    mining: flagEnabled(env.FEATURE_MINING, true),
+    banking: flagEnabled(env.FEATURE_BANKING, true),
+    custody: flagEnabled(env.FEATURE_CUSTODY, true),
   };
 }
 

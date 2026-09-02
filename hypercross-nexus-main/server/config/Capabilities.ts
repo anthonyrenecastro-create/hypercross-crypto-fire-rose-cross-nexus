@@ -42,6 +42,10 @@ export async function getCapabilities(env: NodeJS.ProcessEnv = process.env): Pro
     ? "LIVE"
     : "DEGRADED"; // degraded history available in DB
 
+  const liveStatus: CapabilityStatus = rpcHealthy
+    ? "LIVE"
+    : (isDemo && allowDemo ? "DEVELOPMENT_ONLY" : "UNAVAILABLE");
+
   return {
     backendApi: backendStatus,
     blockchainRpc: blockchainStatus,
@@ -52,11 +56,11 @@ export async function getCapabilities(env: NodeJS.ProcessEnv = process.env): Pro
     swap: swapStatus,
     transactions: transactionsStatus,
     // Non-MVP features are "COMING_SOON" but if enabled and in demo mode with ALLOW_DEMO_DATA, they are "DEVELOPMENT_ONLY"
-    rwaInfrastructure: getFeatureFlags(env).rwa ? (isDemo && allowDemo ? "DEVELOPMENT_ONLY" : "UNAVAILABLE") : "COMING_SOON",
-    nftMarketplace: getFeatureFlags(env).nft ? (isDemo && allowDemo ? "DEVELOPMENT_ONLY" : "UNAVAILABLE") : "COMING_SOON",
-    tokenFundraising: getFeatureFlags(env).launchpad ? (isDemo && allowDemo ? "DEVELOPMENT_ONLY" : "UNAVAILABLE") : "COMING_SOON",
-    tokenLaunchpad: getFeatureFlags(env).launchpad ? (isDemo && allowDemo ? "DEVELOPMENT_ONLY" : "UNAVAILABLE") : "COMING_SOON",
-    derivatives: getFeatureFlags(env).derivatives ? (isDemo && allowDemo ? "DEVELOPMENT_ONLY" : "UNAVAILABLE") : "COMING_SOON",
-    copyTrading: getFeatureFlags(env).copyTrading ? (isDemo && allowDemo ? "DEVELOPMENT_ONLY" : "UNAVAILABLE") : "COMING_SOON",
+    rwaInfrastructure: getFeatureFlags(env).rwa ? liveStatus : "COMING_SOON",
+    nftMarketplace: getFeatureFlags(env).nft ? liveStatus : "COMING_SOON",
+    tokenFundraising: getFeatureFlags(env).launchpad ? liveStatus : "COMING_SOON",
+    tokenLaunchpad: getFeatureFlags(env).launchpad ? liveStatus : "COMING_SOON",
+    derivatives: getFeatureFlags(env).derivatives ? liveStatus : "COMING_SOON",
+    copyTrading: getFeatureFlags(env).copyTrading ? liveStatus : "COMING_SOON",
   };
 }
