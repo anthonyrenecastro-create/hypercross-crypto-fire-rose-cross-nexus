@@ -173,6 +173,24 @@ export function initDb() {
     db.exec(`ALTER TABLE transactions ADD COLUMN intentData TEXT`);
   }
 
+  // Digital Assets (legacy schema; not used by the active Chainstack MVP runtime)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS assets (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      supply TEXT,
+      type TEXT,
+      channel TEXT,
+      chaincode TEXT,
+      orgId TEXT NOT NULL,
+      externalId TEXT,
+      lastSyncedAt DATETIME,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (orgId) REFERENCES organizations(id)
+    )
+  `);
+
   // Migration guard: add custom columns to pre-existing local databases for assets
   const assetCols = db.prepare(`PRAGMA table_info(assets)`).all() as Array<{ name: string }>;
   const assetColNames = new Set(assetCols.map((c) => c.name));
@@ -204,24 +222,6 @@ export function initDb() {
       action TEXT NOT NULL,
       metadata JSON,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Digital Assets (legacy schema; not used by the active Chainstack MVP runtime)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS assets (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      symbol TEXT NOT NULL,
-      supply TEXT,
-      type TEXT,
-      channel TEXT,
-      chaincode TEXT,
-      orgId TEXT NOT NULL,
-      externalId TEXT,
-      lastSyncedAt DATETIME,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (orgId) REFERENCES organizations(id)
     )
   `);
 
