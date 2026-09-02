@@ -241,7 +241,7 @@ async function startServer() {
     crossOriginOpenerPolicy: false,
   }));
 
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:5173")
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:5173,https://www.hypercrossfinancial.com,https://hypercrossfinancial.com")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
