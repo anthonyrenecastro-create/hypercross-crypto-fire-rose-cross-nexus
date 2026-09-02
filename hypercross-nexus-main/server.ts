@@ -242,7 +242,7 @@ async function startServer() {
     crossOriginOpenerPolicy: false,
   }));
 
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:10000,http://localhost:3000,http://localhost:5173,https://www.hypercrossfinancial.com,https://hypercrossfinancial.com")
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:10000,http://localhost:3000,http://localhost:5173,https://www.hypercrossfinancial.online,https://hypercrossfinancial.online,https://www.hypercrossfinancial.com,https://hypercrossfinancial.com")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
@@ -256,8 +256,9 @@ async function startServer() {
       if (!origin || allowedOrigins.includes(origin) || allowedOrigins.some(ao => origin.endsWith(ao.replace(/^https?:\/\//, "")))) {
         return callback(null, true);
       }
-      // If the domain is hypercrossfinancial.com or a subdomain of it, automatically white-list it cleanly without warning.
-      if (origin.endsWith("hypercrossfinancial.com")) {
+      // Accept both canonical Hypercross domains even if Render's environment
+      // variable has not been configured yet.
+      if (origin === "https://hypercrossfinancial.online" || origin === "https://www.hypercrossfinancial.online" || origin.endsWith(".hypercrossfinancial.online") || origin === "https://hypercrossfinancial.com" || origin === "https://www.hypercrossfinancial.com" || origin.endsWith(".hypercrossfinancial.com")) {
         return callback(null, true);
       }
       // Log origin during CORS failure of domain checks so user can trace their domain configuration.
