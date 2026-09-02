@@ -144,7 +144,7 @@ ipcMain.handle('secure-store-delete', async (_event, key) => {
 });
 
 ipcMain.handle('get-api-base-url', async () => {
-  return process.env.HYPERCROSS_API_URL || 'http://localhost:3000';
+  return process.env.HYPERCROSS_API_URL || 'http://localhost:10000';
 });
 
 app.whenReady().then(() => {

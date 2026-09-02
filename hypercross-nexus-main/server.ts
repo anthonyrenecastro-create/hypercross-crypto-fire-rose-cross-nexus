@@ -200,14 +200,14 @@ const OAUTH_CONFIG = {
   stripe: {
     clientId: process.env.STRIPE_OAUTH_CLIENT_ID || "ca_test_stripe_oauth_client_id",
     clientSecret: process.env.STRIPE_OAUTH_CLIENT_SECRET || "secret_test_stripe_oauth_secret",
-    redirectUri: `${process.env.OAUTH_REDIRECT_BASE || "http://localhost:3000"}/api/oauth/stripe/callback`,
+    redirectUri: `${process.env.OAUTH_REDIRECT_BASE || "http://localhost:10000"}/api/oauth/stripe/callback`,
     authorizationUrl: "https://connect.stripe.com/oauth/authorize",
     tokenUrl: "https://connect.stripe.com/oauth/token",
   },
   paypal: {
     clientId: process.env.PAYPAL_OAUTH_CLIENT_ID || "AZBLp0test_paypal_client_id",
     clientSecret: process.env.PAYPAL_OAUTH_CLIENT_SECRET || "secret_test_paypal_client_secret",
-    redirectUri: `${process.env.OAUTH_REDIRECT_BASE || "http://localhost:3000"}/api/oauth/paypal/callback`,
+    redirectUri: `${process.env.OAUTH_REDIRECT_BASE || "http://localhost:10000"}/api/oauth/paypal/callback`,
     authorizationUrl: process.env.PAYPAL_SANDBOX ? 
       "https://www.sandbox.paypal.com/oauth2/auth" : 
       "https://www.paypal.com/oauth2/auth",
@@ -231,7 +231,7 @@ function envFlagEnabled(value: string | undefined): boolean {
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = Number(process.env.PORT) || 10000;
 
   app.set("trust proxy", 1); // Railway/other PaaS run behind a reverse proxy
 
@@ -241,7 +241,7 @@ async function startServer() {
     crossOriginOpenerPolicy: false,
   }));
 
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:5173,https://www.hypercrossfinancial.com,https://hypercrossfinancial.com")
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:10000,http://localhost:3000,http://localhost:5173,https://www.hypercrossfinancial.com,https://hypercrossfinancial.com")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
@@ -2052,7 +2052,7 @@ async function startServer() {
       const baseUrl = process.env.HYPERCROSS_PUBLIC_URL
         || process.env.RENDER_EXTERNAL_URL
         || process.env.OAUTH_REDIRECT_BASE
-        || "http://localhost:3000";
+        || "http://localhost:10000";
 
       if (!email) return res.status(400).json({ error: "email is required" });
       if (plan !== "starter" && plan !== "pro" && plan !== "enterprise" && plan !== "enterprise_deluxe") {

@@ -3,7 +3,7 @@
  * across web and desktop. Base URL is configurable and never hard-coded:
  *  - Browser (Vite):  VITE_HYPERCROSS_API_URL
  *  - Desktop (Electron): HYPERCROSS_API_URL (or window.electron.getApiBaseUrl())
- *  - Falls back to http://localhost:3000 for local development only.
+ *  - Falls back to http://localhost:10000 for local development only.
  *
  * NOTE: like packages/shared, this is currently a plain module (not yet an
  * installable workspace package) — see docs/DEPLOYMENT.md.
@@ -35,7 +35,7 @@ function resolveDefaultBaseUrl(): string {
   if (typeof process !== "undefined" && process.env?.HYPERCROSS_API_URL) {
     return process.env.HYPERCROSS_API_URL;
   }
-  return "http://localhost:3000";
+  return "http://localhost:10000";
 }
 
 export function createApiClient(options: ApiClientOptions = {}) {
