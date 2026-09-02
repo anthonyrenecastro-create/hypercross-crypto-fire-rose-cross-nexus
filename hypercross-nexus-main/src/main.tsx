@@ -8,6 +8,25 @@ import "./index.css";
 
 const queryClient = new QueryClient();
 
+function showBootstrapError(error: unknown) {
+  const root = document.getElementById("root");
+  if (!root) return;
+  const message = error instanceof Error ? error.message : String(error);
+  root.innerHTML = "";
+  const panel = document.createElement("main");
+  panel.style.cssText = "min-height:100vh;padding:32px;background:#050505;color:#fff;font-family:sans-serif";
+  panel.innerHTML = `<h1 style="font-size:24px;margin-bottom:12px">Hyper-Cross Nexus could not load</h1><p style="color:#fca5a5">${message.replace(/[&<>\"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character] ?? character)}</p>`;
+  root.appendChild(panel);
+  console.error("Application bootstrap failed", error);
+}
+
+window.addEventListener("error", (event) => {
+  showBootstrapError(event.error ?? event.message);
+});
+window.addEventListener("unhandledrejection", (event) => {
+  showBootstrapError(event.reason);
+});
+
 class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   private readonly children: ReactNode;
   state: { error: Error | null } = { error: null };
@@ -41,15 +60,24 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error
   }
 }
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <AppErrorBoundary>
-      <WagmiProvider config={wagmiConfig}>
-        <QueryClientProvider client={queryClient}>
-          <App />
-        </QueryClientProvider>
-      </WagmiProvider>
-    </AppErrorBoundary>
-  </StrictMode>
-);
+const rootElement = document.getElementById("root");
+if (!rootElement) {
+  showBootstrapError("The application root element is missing.");
+} else {
+  try {
+    createRoot(rootElement).render(
+      <StrictMode>
+        <AppErrorBoundary>
+          <WagmiProvider config={wagmiConfig}>
+            <QueryClientProvider client={queryClient}>
+              <App />
+            </QueryClientProvider>
+          </WagmiProvider>
+        </AppErrorBoundary>
+      </StrictMode>
+    );
+  } catch (error) {
+    showBootstrapError(error);
+  }
+}
 
