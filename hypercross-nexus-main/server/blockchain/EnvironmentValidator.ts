@@ -104,8 +104,10 @@ export class EnvironmentValidator {
 
     // ─── SAFETY & REAL EXECUTION CONFIG ─────────────────────────────────────
     if (env.CHAINSTACK_PRIVATE_KEY?.trim()) {
-      warnings.push(
-        `[SAFETY] CHAINSTACK_PRIVATE_KEY is set. User-wallet signed transactions are otherwise recommended.`
+      errors.push(
+        "CHAINSTACK_PRIVATE_KEY is not supported for MVP. " +
+        "User wallet signing is required for all transactions. " +
+        "Remove this variable from .env and verify no private keys are stored server-side."
       );
     }
 

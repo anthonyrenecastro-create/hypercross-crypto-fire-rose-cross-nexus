@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { SimulationBadge } from "@/components/SimulationBadge";
 
 interface Campaign {
   name: string;
@@ -69,6 +70,7 @@ export default function TokenFundraisingPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
+      <SimulationBadge />
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white flex items-center gap-3">

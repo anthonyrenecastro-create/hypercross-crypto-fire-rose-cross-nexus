@@ -750,9 +750,10 @@ async function startServer() {
     try {
       const address = String(req.query.address || req.body?.address || "").trim();
 
-      if (!address) {
+      // Add address format validation:
+      if (!address || !address.match(/^0x[a-fA-F0-9]{40}$/)) {
         return res.status(400).json({
-          error: "Wallet address is required (query param: ?address=0x...)",
+          error: "Invalid wallet address. Expected format: 0x[40 hex characters]",
         });
       }
 
@@ -886,9 +887,14 @@ async function startServer() {
       const forceRefresh = req.query.refresh === "true";
 
       const portfolio = await PortfolioService.getPortfolio(address, chainId, forceRefresh);
+      const status = await blockchainService.getStatus();
 
       return res.json({
         ok: true,
+        isPublic: true,
+        warning: "This endpoint shows testnet data publicly. Do not assume privacy.",
+        chainId: chainId || status.chainId || 11155111,
+        testnetLabel: status.network || "Ethereum Sepolia",
         portfolio,
       });
     } catch (error: any) {
@@ -930,6 +936,10 @@ async function startServer() {
 
       return res.json({
         ok: true,
+        isPublic: true,
+        warning: "This endpoint shows testnet data publicly. Do not assume privacy.",
+        chainId: chainId,
+        testnetLabel: status.network || "Ethereum Sepolia",
         portfolio,
       });
     } catch (error: any) {
@@ -968,8 +978,14 @@ async function startServer() {
         });
       }
 
+      const status = await blockchainService.getStatus();
+
       return res.json({
         ok: true,
+        isPublic: true,
+        warning: "This endpoint shows testnet data publicly. Do not assume privacy.",
+        chainId: Number(chainId),
+        testnetLabel: status.network || "Ethereum Sepolia",
         balance,
       });
     } catch (error: any) {
