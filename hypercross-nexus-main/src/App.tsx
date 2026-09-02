@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useAccount, useDisconnect } from "wagmi";
+import { useAccount, useConnect, useDisconnect } from "wagmi";
 import CheckoutPage from "./pages/CheckoutPage";
 import BillingPage from "./pages/BillingPage";
 import DigitalAssetsPage from "./pages/DigitalAssetsPage";
@@ -133,6 +132,7 @@ type PlanTier = 'starter' | 'pro' | 'enterprise' | 'enterprise_deluxe';
 
 export default function App() {
   const { isConnected: isWalletConnected } = useAccount();
+  const { connect, connectors, isPending: isConnecting } = useConnect();
   const { disconnect, isPending: isDisconnecting } = useDisconnect();
   const [data, setData] = useState<ChainstackStatusData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -159,6 +159,12 @@ export default function App() {
   type PageKey = 'overview' | 'chainstack' | 'send' | 'swap' | 'transactions' | 'assets' | 'rwa' | 'fundraising' | 'nft' | 'launchpad' | 'sports' | 'derivatives' | 'copytrading' | 'mining' | 'custody' | 'settings' | 'billing';
   const [activePage, setActivePage] = useState<PageKey>('overview');
   const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({});
+
+  const connectInjectedWallet = () => {
+    const injectedConnector = connectors.find((connector) => connector.id === "injected") ?? connectors[0];
+    if (!injectedConnector) return;
+    connect({ connector: injectedConnector });
+  };
 
   useEffect(() => {
     fetch("/api/config/features")
@@ -642,7 +648,17 @@ export default function App() {
                 {isDisconnecting ? "Disconnecting..." : "Disconnect Wallet"}
               </Button>
             )}
-            <ConnectButton />
+            {!isWalletConnected ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-[#ffae00]/40 bg-[#ffae00]/10 text-[#ffae00] hover:bg-[#ffae00]/20"
+                disabled={isConnecting}
+                onClick={connectInjectedWallet}
+              >
+                {isConnecting ? "Connecting..." : "Connect Wallet"}
+              </Button>
+            ) : null}
           </div>
         </header>
 
@@ -1040,7 +1056,13 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
     setConfirmPassword('');
   };
 
-  const submitAuth = async () => {
+  const submitAuth = async (): Promise<{
+    ok: boolean;
+    status: number;
+    error?: string;
+    message?: string;
+    user?: Record<string, unknown>;
+  }> => {
     if (authMode === 'forgot') {
       const response = await fetch('/api/auth/reset-password', {
         method: 'POST',
@@ -1068,9 +1090,16 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
 
     // In packaged Electron (file://), REST API routes are unavailable, so prefer IPC auth.
     if (window.electron?.authSignup && window.electron?.authSignin) {
-      return authMode === 'signup'
-        ? window.electron.authSignup(payload)
-        : window.electron.authSignin(payload);
+      const result = authMode === 'signup'
+        ? await window.electron.authSignup(payload)
+        : await window.electron.authSignin(payload);
+      return {
+        ok: Boolean(result?.ok),
+        status: Number(result?.status ?? 200),
+        error: typeof result?.error === 'string' ? result.error : undefined,
+        message: typeof result?.message === 'string' ? result.message : undefined,
+        user: result?.user && typeof result.user === 'object' ? result.user as Record<string, unknown> : undefined,
+      };
     }
 
     const endpoint = authMode === 'signup' ? '/api/auth/signup' : '/api/auth/signin';
@@ -1085,6 +1114,7 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
       ok: response.ok,
       status: response.status,
       error: payloadJson?.error,
+      message: payloadJson?.message,
       user: payloadJson?.user,
     };
   };
@@ -1565,21 +1595,15 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
 
                   <div className="mt-4">
                     <div>
-                      <ConnectButton.Custom>
-                        {({ account, chain, openAccountModal, openConnectModal, mounted }) => {
-                          const connected = mounted && account && chain;
-                          return (
-                            <button
-                              type="button"
-                              onClick={connected ? openAccountModal : openConnectModal}
-                              className="w-full flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm text-white/70 bg-white/5 border border-[#ffae00]/20 hover:bg-[#ffae00]/10 hover:text-white hover:border-[#ffae00]/40 transition-colors"
-                            >
-                              <Wallet className="h-4 w-4 text-[#ffae00]" />
-                              {connected ? `${account.displayName} · ${chain.name}` : "Connect Web3 Wallet"}
-                            </button>
-                          );
-                        }}
-                      </ConnectButton.Custom>
+                      <button
+                        type="button"
+                        onClick={connectInjectedWallet}
+                        disabled={isConnecting}
+                        className="w-full flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm text-white/70 bg-white/5 border border-[#ffae00]/20 hover:bg-[#ffae00]/10 hover:text-white hover:border-[#ffae00]/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Wallet className="h-4 w-4 text-[#ffae00]" />
+                        {isConnecting ? "Connecting wallet..." : "Connect Web3 Wallet"}
+                      </button>
                     </div>
                   </div>
                 </>
