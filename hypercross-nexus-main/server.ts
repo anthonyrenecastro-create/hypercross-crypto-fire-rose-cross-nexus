@@ -2398,9 +2398,17 @@ async function startServer() {
 
   if (hasBuiltAssets) {
     console.log(`Serving built frontend from ${distPath}`);
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      setHeaders(res, filePath) {
+        // The SPA shell must be revalidated after each deploy; hashed assets can remain cached.
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+        }
+      },
+    }));
     // Express 5 / path-to-regexp v6+ require a named wildcard param, not bare "*"
     app.get("/*splat", (req, res) => {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
       res.sendFile(distIndexPath);
     });
   } else if (process.env.NODE_ENV !== "production") {
