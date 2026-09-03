@@ -10,6 +10,16 @@
       <p id="bootstrap-status">Loading Hyper-Cross Nexus...</p>
     </div>
     <script>
+      window.addEventListener("error", function (event) {
+        var target = event.target;
+        if (!(target instanceof HTMLScriptElement) || !target.src) return;
+        var status = document.getElementById("bootstrap-status");
+        if (!status) return;
+        status.textContent = "The application could not load its JavaScript asset: " + target.src;
+        status.style.color = "#fca5a5";
+      }, true);
+    </script>
+    <script>
       window.setTimeout(function () {
         var status = document.getElementById("bootstrap-status");
         if (status) {
