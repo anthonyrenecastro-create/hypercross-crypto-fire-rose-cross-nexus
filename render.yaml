@@ -9,6 +9,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: ALLOW_MAINNET_WRITES
+        value: "false"
       - key: HYPERCROSS_PUBLIC_URL
         value: https://www.hypercrossfinancial.online
       - key: ALLOWED_ORIGINS
