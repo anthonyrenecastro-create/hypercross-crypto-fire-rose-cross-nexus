@@ -13,7 +13,25 @@ services:
         value: https://www.hypercrossfinancial.online
       - key: ALLOWED_ORIGINS
         value: https://www.hypercrossfinancial.online,https://hypercrossfinancial.online,https://www.hypercrossfinancial.com,https://hypercrossfinancial.com
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: CHAINSTACK_RPC_URL
+        sync: false
+      - key: CHAINSTACK_WSS_URL
+        sync: false
       - key: ZEROX_API_KEY
         sync: false
-      - key: DATABASE_URL
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_RESEARCH
+        sync: false
+      - key: STRIPE_PRICE_TRADER
+        sync: false
+      - key: STRIPE_PRICE_PRO
         sync: false

@@ -4,8 +4,8 @@ Use this checklist before promoting a deployment beyond internal testing.
 
 ## Provisioning
 
-- [ ] PostgreSQL provisioned (Railway plugin or external managed Postgres)
-- [ ] `DATABASE_URL` configured in the Railway service environment
+- [ ] PostgreSQL provisioned (Render PostgreSQL or external managed Postgres)
+- [ ] `DATABASE_URL` configured in the Render service environment
 - [ ] Migrations applied: `npm run db:migrate` (against the production `DATABASE_URL`)
 - [ ] `JWT_SECRET` generated (long random string, e.g. `openssl rand -hex 32`) and set
 - [ ] `ENCRYPTION_KEY` generated and set (for any encrypted-at-rest linked-account credentials)
@@ -35,7 +35,7 @@ Use this checklist before promoting a deployment beyond internal testing.
 - [ ] Stripe test-mode payment succeeds (`POST /api/billing/create-checkout-session` → complete checkout with a Stripe test card)
 - [ ] Stripe webhook delivers `checkout.session.completed`/`customer.subscription.created` and the `subscriptions` row updates to `active`
 - [ ] Subscription entitlement succeeds: `hasEntitlement(userId, "automated_trading")` returns `true` for a Trader/Pro plan
-- [ ] Windows installer login succeeds against the deployed backend (`HYPERCROSS_API_URL` pointed at the Railway domain)
+- [ ] Windows installer login succeeds against the deployed backend (`HYPERCROSS_API_URL` pointed at the Render domain)
 - [ ] Chainstack backend connection succeeds: `GET /api/blockchain/status` reports `connected: true` with a real `blockNumber`
 
 ## Known gaps as of this pass
@@ -46,6 +46,6 @@ These items require infrastructure (a live Postgres instance, real Stripe test-m
 - Live Stripe checkout/webhook round trip
 - Live Chainstack HTTPS/WSS connectivity
 - An actual generated Windows installer (`electron-builder` requires a Windows or Wine-capable build agent; this sandbox is Linux-only)
-- Railway deployment itself (no Railway account/project connected here)
+- Render deployment itself (no Render account/project connected here)
 
 See `REAL_STATUS_REPORT.md` and `HYPERCROSS_COMMERCIAL_DEPLOYMENT_REPORT.md` for full detail on what was verified vs. implemented-but-unverified.

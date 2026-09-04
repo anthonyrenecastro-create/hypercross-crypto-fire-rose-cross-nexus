@@ -26,7 +26,7 @@ accounts/entitlements.
                          │
                          ▼
               HYPERCROSS BACKEND (server.ts)
-                Railway deployment
+                Render deployment
                          │
         ┌────────────────┼────────────────┐
         │                │                │
@@ -94,14 +94,14 @@ The server exposes `/api/blockchain/status` for the app shell and `/health`, `/h
 | Up/Down execution | Planned / Xero |
 | Custody and mining | Simulated |
 
-## Production deployment (Railway)
+## Production deployment (Render)
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full checklist. Summary:
 
-1. Provision PostgreSQL (Railway plugin or external) and set `DATABASE_URL`.
-2. Run migrations: `npm run db:migrate` (or as a Railway release command).
-3. Set all required environment variables (see `.env.example`) in the Railway service — `JWT_SECRET`, `ENCRYPTION_KEY`, `CHAINSTACK_RPC_URL`, `CHAINSTACK_WSS_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*`, `ALLOWED_ORIGINS`, `HYPERCROSS_PUBLIC_URL`.
-4. Railway builds with `npm ci && npm run build` and starts with `npm run start` (see `railway.toml`). The server binds to `0.0.0.0:$PORT` and exposes `/health/ready` as the healthcheck path.
+1. Provision PostgreSQL (Render PostgreSQL or external) and set `DATABASE_URL`.
+2. Run migrations: `npm run db:migrate` against the production database.
+3. Set all required environment variables (see `.env.example`) in the Render service — `JWT_SECRET`, `ENCRYPTION_KEY`, `CHAINSTACK_RPC_URL`, `CHAINSTACK_WSS_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*`, `ALLOWED_ORIGINS`, `HYPERCROSS_PUBLIC_URL`.
+4. Render builds with `npm ci && npm run build` and starts with `npm run start` (see `render.yaml`). The server binds to `0.0.0.0:$PORT` and exposes `/health/ready` as the healthcheck path.
 5. Configure a Stripe webhook endpoint pointing at `https://<your-domain>/api/billing/webhook` for: `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.paid`, `invoice.payment_failed`.
 
 ## PostgreSQL migrations
