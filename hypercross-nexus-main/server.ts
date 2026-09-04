@@ -284,7 +284,14 @@ async function startServer() {
       if (!trimmed) continue;
       const idx = trimmed.indexOf("=");
       const key = idx >= 0 ? trimmed.slice(0, idx) : trimmed;
-      const value = idx >= 0 ? decodeURIComponent(trimmed.slice(idx + 1)) : "";
+      const rawValue = idx >= 0 ? trimmed.slice(idx + 1) : "";
+      // A malformed %-encoding (from third-party/extension cookies) must not 500 every request.
+      let value = rawValue;
+      try {
+        value = idx >= 0 ? decodeURIComponent(rawValue) : "";
+      } catch {
+        value = rawValue;
+      }
       cookies[key] = value;
     }
     (req as any).cookies = cookies;
