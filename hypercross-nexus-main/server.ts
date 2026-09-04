@@ -703,15 +703,6 @@ async function startServer() {
     }
   });
 
-  // Temporary diagnostic endpoint — no secrets exposed, just the resolved CORS
-  // allow-list, to debug why legitimate origins were being rejected.
-  app.get("/debug/cors-config", (_req, res) => {
-    res.json({
-      rawEnv: process.env.ALLOWED_ORIGINS ?? null,
-      resolvedAllowList: allowedOrigins,
-    });
-  });
-
   // ── Commercial deployment health endpoints (Railway-facing) ──
   // ROLE 1: /health/live - Process exists. Verifies the HTTP server is running.
   app.get("/health/live", (req, res) => {
