@@ -75,6 +75,18 @@ export function initDb() {
   `);
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS passwordResetTokens (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      tokenHash TEXT NOT NULL UNIQUE,
+      expiresAt DATETIME NOT NULL,
+      usedAt DATETIME,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (userId) REFERENCES authUsers(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS oauthStates (
       id TEXT PRIMARY KEY,
       userId TEXT NOT NULL,
@@ -393,6 +405,25 @@ export const queries = {
     `),
   },
 
+  passwordReset: {
+    create: db.prepare(`
+      INSERT INTO passwordResetTokens (id, userId, tokenHash, expiresAt)
+      VALUES (?, ?, ?, ?)
+    `),
+    invalidateForUser: db.prepare(`
+      UPDATE passwordResetTokens SET usedAt = CURRENT_TIMESTAMP
+      WHERE userId = ? AND usedAt IS NULL
+    `),
+    getActiveByHash: db.prepare(`
+      SELECT * FROM passwordResetTokens
+      WHERE tokenHash = ? AND usedAt IS NULL AND expiresAt > CURRENT_TIMESTAMP
+    `),
+    markUsed: db.prepare(`
+      UPDATE passwordResetTokens SET usedAt = CURRENT_TIMESTAMP
+      WHERE id = ? AND usedAt IS NULL
+    `),
+  },
+
   user: {
     create: db.prepare(`
       INSERT INTO users (id, email, walletAddress, displayName) 
@@ -427,9 +458,9 @@ export const queries = {
       INSERT INTO sessions (id, userId, orgId, role, expiresAt)
       VALUES (?, ?, ?, ?, ?)
     `),
+    deleteByUser: db.prepare(`DELETE FROM sessions WHERE userId = ?`),
     getById: db.prepare(`SELECT * FROM sessions WHERE id = ?`),
     deleteById: db.prepare(`DELETE FROM sessions WHERE id = ?`),
-    deleteByUser: db.prepare(`DELETE FROM sessions WHERE userId = ?`),
   },
 
   oauthState: {
