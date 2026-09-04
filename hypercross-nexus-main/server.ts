@@ -244,18 +244,22 @@ async function startServer() {
     crossOriginOpenerPolicy: false,
   }));
 
+  // Strip trailing slashes and lowercase so trivially-different values (e.g. a
+  // stray "/" from copy/paste) don't cause spurious CORS rejections.
+  const normalizeOrigin = (value: string) => value.trim().replace(/\/+$/, "").toLowerCase();
   const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:10000,http://localhost:3000,http://localhost:5173,https://www.hypercrossfinancial.online,https://hypercrossfinancial.online,https://www.hypercrossfinancial.com,https://hypercrossfinancial.com")
     .split(",")
-    .map((origin) => origin.trim())
+    .map(normalizeOrigin)
     .filter(Boolean);
   // Render/Railway expose the live deployment URL via these env vars; auto-allow
   // it so the app isn't broken by default before ALLOWED_ORIGINS is configured.
-  if (process.env.RENDER_EXTERNAL_URL) allowedOrigins.push(process.env.RENDER_EXTERNAL_URL);
-  if (process.env.HYPERCROSS_PUBLIC_URL) allowedOrigins.push(process.env.HYPERCROSS_PUBLIC_URL);
+  if (process.env.RENDER_EXTERNAL_URL) allowedOrigins.push(normalizeOrigin(process.env.RENDER_EXTERNAL_URL));
+  if (process.env.HYPERCROSS_PUBLIC_URL) allowedOrigins.push(normalizeOrigin(process.env.HYPERCROSS_PUBLIC_URL));
+  console.log(`CORS allow-list (${allowedOrigins.length}): ${allowedOrigins.join(", ")}`);
   app.use(cors({
     origin(origin, callback) {
       // Requests without an Origin header are same-origin, Electron, or CLI calls.
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || allowedOrigins.includes(normalizeOrigin(origin))) {
         return callback(null, true);
       }
       console.warn(`[CORS Request Blocked]: ${origin}`);
