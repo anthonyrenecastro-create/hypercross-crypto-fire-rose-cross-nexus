@@ -15,50 +15,13 @@ export default defineConfig({
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       output: {
+        // A single vendor bucket avoids the circular chunk dependencies the
+        // previous multi-way split produced (react-vendor <-> query-vendor <->
+        // wagmi-vendor etc.), which could execute a chunk depending on React
+        // before react-vendor finished initializing (causing "Cannot read
+        // properties of undefined (reading 'createContext')" at runtime).
         manualChunks(id) {
-          if (!id.includes('node_modules')) return undefined;
-
-          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
-            return 'react-vendor';
-          }
-
-          if (id.includes('/@rainbow-me/')) {
-            return 'rainbowkit-vendor';
-          }
-
-          if (id.includes('/@walletconnect/') || id.includes('/@reown/') || id.includes('/@base-org/') || id.includes('/@coinbase/') || id.includes('/@safe-global/') || id.includes('/@gemini-wallet/')) {
-            return 'walletconnect-vendor';
-          }
-
-          if (id.includes('/wagmi') || id.includes('/viem')) {
-            return 'wagmi-vendor';
-          }
-
-          if (id.includes('/@tanstack/')) {
-            return 'query-vendor';
-          }
-
-          if (id.includes('/zod/')) {
-            return 'schema-vendor';
-          }
-
-          if (id.includes('/recharts/') || id.includes('/d3-') || id.includes('/victory')) {
-            return 'chart-vendor';
-          }
-
-          if (
-            id.includes('/lucide-react/') ||
-            id.includes('/clsx') ||
-            id.includes('/class-variance-authority') ||
-            id.includes('/tailwind')
-          ) {
-            return 'ui-vendor';
-          }
-
-          if (id.includes('/node_modules/')) {
-            return 'vendor';
-          }
-
+          if (id.includes('node_modules')) return 'vendor';
           return undefined;
         },
       },
