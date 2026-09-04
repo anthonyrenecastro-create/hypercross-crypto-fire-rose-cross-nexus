@@ -2481,6 +2481,15 @@ async function startServer() {
     });
   }, 15000);
 
+  // Last-resort handler: without this, any error passed to next(err) (e.g. from
+  // the CORS origin callback) falls through to Express's opaque default error
+  // page, hiding the real cause from both logs and the client.
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error(`Unhandled request error on ${req.method} ${req.path}:`, err);
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: "Internal server error", message: err?.message ?? String(err) });
+  });
+
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
