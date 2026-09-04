@@ -244,9 +244,11 @@ async function startServer() {
     crossOriginOpenerPolicy: false,
   }));
 
-  // Strip trailing slashes and lowercase so trivially-different values (e.g. a
-  // stray "/" from copy/paste) don't cause spurious CORS rejections.
-  const normalizeOrigin = (value: string) => value.trim().replace(/\/+$/, "").toLowerCase();
+  // Strip trailing slashes, surrounding quotes (a common copy/paste artifact
+  // from .env-style values), and lowercase so trivial formatting differences
+  // don't cause spurious CORS rejections.
+  const normalizeOrigin = (value: string) =>
+    value.trim().replace(/^["']+|["']+$/g, "").replace(/\/+$/, "").toLowerCase();
   const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:10000,http://localhost:3000,http://localhost:5173,https://www.hypercrossfinancial.online,https://hypercrossfinancial.online,https://www.hypercrossfinancial.com,https://hypercrossfinancial.com")
     .split(",")
     .map(normalizeOrigin)
@@ -262,11 +264,12 @@ async function startServer() {
       if (!origin || allowedOrigins.includes(normalizeOrigin(origin))) {
         return callback(null, true);
       }
-      console.warn(`[CORS Request Blocked]: ${origin}`);
+      console.warn(`[CORS Request Blocked]: ${origin} (allow-list: ${allowedOrigins.join(", ")})`);
       return callback(new Error("CORS policy violation: origin not allowed"));
     },
     credentials: true,
   }));
+
 
   // Stripe webhook endpoints require the raw request body for signature
   // verification — they must never be parsed by the JSON body parser below.
@@ -698,6 +701,15 @@ async function startServer() {
         timestamp: new Date().toISOString(),
       });
     }
+  });
+
+  // Temporary diagnostic endpoint — no secrets exposed, just the resolved CORS
+  // allow-list, to debug why legitimate origins were being rejected.
+  app.get("/debug/cors-config", (_req, res) => {
+    res.json({
+      rawEnv: process.env.ALLOWED_ORIGINS ?? null,
+      resolvedAllowList: allowedOrigins,
+    });
   });
 
   // ── Commercial deployment health endpoints (Railway-facing) ──
