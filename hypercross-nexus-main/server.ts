@@ -2433,6 +2433,9 @@ async function startServer() {
         }
       },
     }));
+    app.get("/assets/*splat", (_req, res) => {
+      return res.status(404).json({ error: "Built asset not found." });
+    });
     // Express 5 / path-to-regexp v6+ require a named wildcard param, not bare "*"
     app.get("/*splat", (req, res) => {
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
