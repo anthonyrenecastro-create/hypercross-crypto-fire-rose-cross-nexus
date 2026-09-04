@@ -13,6 +13,8 @@ services:
         value: "false"
       - key: HYPERCROSS_PUBLIC_URL
         value: https://www.hypercrossfinancial.online
+      - key: VITE_WALLETCONNECT_PROJECT_ID
+        sync: false
       - key: ALLOWED_ORIGINS
         value: https://www.hypercrossfinancial.online,https://hypercrossfinancial.online,https://www.hypercrossfinancial.com,https://hypercrossfinancial.com
       - key: DATABASE_URL

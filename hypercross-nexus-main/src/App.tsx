@@ -134,7 +134,6 @@ type PlanTier = 'starter' | 'pro' | 'enterprise' | 'enterprise_deluxe';
 
 export default function App() {
   const { isConnected: isWalletConnected } = useAccount();
-  const { connect, connectors, isPending: isConnecting } = useConnect();
   const { disconnect, isPending: isDisconnecting } = useDisconnect();
   const [data, setData] = useState<ChainstackStatusData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -162,12 +161,6 @@ export default function App() {
   type PageKey = 'overview' | 'intelligence' | 'chainstack' | 'send' | 'swap' | 'transactions' | 'assets' | 'rwa' | 'fundraising' | 'nft' | 'launchpad' | 'sports' | 'derivatives' | 'copytrading' | 'mining' | 'custody' | 'settings' | 'billing';
   const [activePage, setActivePage] = useState<PageKey>('overview');
   const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({});
-
-  const connectInjectedWallet = () => {
-    const injectedConnector = connectors.find((connector) => connector.id === "injected") ?? connectors[0];
-    if (!injectedConnector) return;
-    connect({ connector: injectedConnector });
-  };
 
   useEffect(() => {
     fetch("/api/config/features")
@@ -514,15 +507,7 @@ export default function App() {
               </Button>
             )}
             {!isWalletConnected ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-[#ffae00]/40 bg-[#ffae00]/10 text-[#ffae00] hover:bg-[#ffae00]/20"
-                disabled={isConnecting}
-                onClick={connectInjectedWallet}
-              >
-                {isConnecting ? "Connecting..." : "Connect Wallet"}
-              </Button>
+              <WalletConnectMenu />
             ) : null}
           </div>
         </header>
@@ -842,8 +827,55 @@ export default function App() {
   );
 }
 
+function WalletConnectMenu({ className = "", label = "Connect Wallet" }: { className?: string; label?: string }) {
+  const { connect, connectors, isPending } = useConnect();
+  const [isOpen, setIsOpen] = useState(false);
+
+  const availableConnectors = connectors.filter((connector, index) => (
+    connectors.findIndex((candidate) => candidate.id === connector.id) === index
+  ));
+
+  return (
+    <div className={`relative ${className}`}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full border-[#ffae00]/40 bg-[#ffae00]/10 text-[#ffae00] hover:bg-[#ffae00]/20"
+        disabled={isPending}
+        onClick={() => setIsOpen((open) => !open)}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+      >
+        <Wallet className="h-4 w-4 mr-2" />
+        {isPending ? "Connecting..." : label}
+      </Button>
+      {isOpen && !isPending && (
+        <div className="absolute right-0 top-full z-30 mt-2 min-w-56 rounded-lg border border-white/15 bg-[#101014] p-1.5 shadow-2xl" role="menu">
+          {availableConnectors.map((connector) => (
+            <button
+              key={connector.uid}
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center rounded-md px-3 py-2.5 text-left text-sm text-white/80 hover:bg-white/10 hover:text-white"
+              onClick={() => {
+                setIsOpen(false);
+                connect({ connector });
+              }}
+            >
+              <Wallet className="mr-2 h-4 w-4 text-[#ffae00]" />
+              {connector.name}
+            </button>
+          ))}
+          {!import.meta.env.VITE_WALLETCONNECT_PROJECT_ID && (
+            <p className="px-3 py-2 text-[11px] text-white/35">WalletConnect requires a project ID.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LoginScreen({ onLogin, data }: { onLogin: (email?: string, accessToken?: string) => void, data: any }) {
-  const { connect, connectors, isPending: isConnecting } = useConnect();
   const [loginMethod, setLoginMethod] = useState<'form' | 'qr'>('form');
   const [authTab, setAuthTab] = useState<'email' | 'phone'>('email');
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
@@ -853,12 +885,6 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string, accessToken?
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const connectInjectedWallet = () => {
-    const injectedConnector = connectors.find((connector) => connector.id === "injected") ?? connectors[0];
-    if (!injectedConnector) return;
-    connect({ connector: injectedConnector });
-  };
 
   const featureHighlights = [
     "Chainstack-native EVM connectivity with real-time RPC health status",
@@ -1420,17 +1446,7 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string, accessToken?
                   </div>
 
                   <div className="mt-4">
-                    <div>
-                      <button
-                        type="button"
-                        onClick={connectInjectedWallet}
-                        disabled={isConnecting}
-                        className="w-full flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm text-white/70 bg-white/5 border border-[#ffae00]/20 hover:bg-[#ffae00]/10 hover:text-white hover:border-[#ffae00]/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Wallet className="h-4 w-4 text-[#ffae00]" />
-                        {isConnecting ? "Connecting wallet..." : "Connect Web3 Wallet"}
-                      </button>
-                    </div>
+                    <WalletConnectMenu className="w-full" label="Connect Web3 Wallet" />
                   </div>
                 </>
               )}
