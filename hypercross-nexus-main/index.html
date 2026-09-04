@@ -15,7 +15,10 @@
         if (!(target instanceof HTMLScriptElement) || !target.src) return;
         var status = document.getElementById("bootstrap-status");
         if (!status) return;
-        status.textContent = "The application could not load its JavaScript asset: " + target.src;
+        var errorMessage = event.error && event.error.message;
+        status.textContent = errorMessage
+          ? "The application encountered a JavaScript error while starting: " + errorMessage
+          : "The application could not load its JavaScript asset: " + target.src;
         status.style.color = "#fca5a5";
       }, true);
     </script>
