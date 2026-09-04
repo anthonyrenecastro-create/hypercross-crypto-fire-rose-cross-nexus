@@ -140,3 +140,29 @@ export const webhookEvents = pgTable("webhook_events", {
   type: text("type").notNull(),
   processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const intelligenceSnapshots = pgTable("intelligence_snapshots", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  symbol: text("symbol").notNull(),
+  snapshot: jsonb("snapshot").notNull(),
+  signals: jsonb("signals").notNull(),
+  opportunity: jsonb("opportunity").notNull(),
+  proposal: jsonb("proposal").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("intelligence_snapshots_user_id_idx").on(table.userId),
+  symbolIdx: index("intelligence_snapshots_symbol_idx").on(table.symbol),
+}));
+
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  tokenHashUnique: uniqueIndex("password_reset_tokens_hash_unique").on(table.tokenHash),
+  userIdx: index("password_reset_tokens_user_id_idx").on(table.userId),
+}));

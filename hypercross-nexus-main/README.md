@@ -66,8 +66,9 @@ accounts/entitlements.
    - `DATABASE_URL=postgres://user:pass@localhost:5432/hypercross`
    - `JWT_SECRET=<generate a long random string>`
    - `STRIPE_SECRET_KEY=`, `STRIPE_WEBHOOK_SECRET=`, `STRIPE_PRICE_RESEARCH/TRADER/PRO=`
+   - `APP_BASE_URL=`, `EMAIL_PROVIDER_URL=`, and `EMAIL_PROVIDER_API_KEY=` for production password recovery
    - Apply migrations: `npm run db:migrate`
-   - Without `DATABASE_URL` set, the app still runs — the legacy SQLite-backed auth (`/api/auth/signup`, `/api/auth/signin`) and existing organization/wallet features work as before; the new `/api/auth/v2/*` and `/api/billing/*` routes are simply not mounted (a warning is logged).
+   - Without `DATABASE_URL` set, the app still runs for local development, but canonical web auth, billing, and intelligence routes are disabled. Legacy SQLite auth remains only for desktop/local compatibility and is not the production identity system.
 5. Start the app:
    ```bash
    npm run dev
@@ -78,6 +79,20 @@ accounts/entitlements.
    ```
 
 The server exposes `/api/blockchain/status` for the app shell and `/health`, `/health/live`, `/health/ready` for infrastructure monitoring. With `APP_DATA_MODE=live` and `LIVE_FEED_STRICT=true`, blockchain data is never silently replaced with demo data — a disconnected or misconfigured RPC is reported as a degraded/disconnected status instead.
+
+## Capability status
+
+| Capability | Status |
+| --- | --- |
+| Chainstack reads | Live |
+| Native/ERC-20 transfers | Live, wallet-signed |
+| 0x swaps | Beta |
+| Transaction verification | Live |
+| Portfolio | Beta |
+| Authentication and Stripe billing | Production beta, Postgres required |
+| Nexus deterministic intelligence | Beta, live market provider integration pending |
+| Up/Down execution | Planned / Xero |
+| Custody and mining | Simulated |
 
 ## Production deployment (Railway)
 

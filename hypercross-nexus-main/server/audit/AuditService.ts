@@ -12,6 +12,7 @@ export type AuditAction =
   | "register_success"
   | "logout"
   | "session_refreshed"
+  | "password_reset_complete"
   | "subscription_changed"
   | "exchange_linked"
   | "trade_requested"

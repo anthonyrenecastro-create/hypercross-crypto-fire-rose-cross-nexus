@@ -15,6 +15,7 @@ import CustodyPage from "./pages/CustodyPage";
 import SendPage from "./pages/SendPage";
 import SwapPage from "./pages/SwapPage";
 import TransactionHistoryPage from "./pages/TransactionHistoryPage";
+import NexusIntelligencePage from "./pages/NexusIntelligencePage";
 import WalletStatusPanel from "./components/WalletStatusPanel";
 import { 
   Activity, 
@@ -49,7 +50,8 @@ import {
   CreditCard,
   Building2,
   CircleDollarSign,
-  Receipt
+  Receipt,
+  Sparkles,
 } from "lucide-react";
 import { 
   LineChart, 
@@ -136,8 +138,8 @@ export default function App() {
   const { disconnect, isPending: isDisconnecting } = useDisconnect();
   const [data, setData] = useState<ChainstackStatusData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userEmail, setUserEmail] = useState<string>("");
+  const [isLoggedIn, setIsLoggedIn] = useState(() => Boolean(window.localStorage.getItem("hcx-access-token")));
+  const [userEmail, setUserEmail] = useState<string>(() => window.localStorage.getItem("hcx-user-email") || "");
   const [checkoutPlan, setCheckoutPlan] = useState<PlanTier | null>(null);
   const [checkoutSuccess, setCheckoutSuccess] = useState<string | null>(null);
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
@@ -155,8 +157,9 @@ export default function App() {
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [paymentsError, setPaymentsError] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PlanTier | null>(null);
+  const [accessToken, setAccessToken] = useState(() => window.localStorage.getItem("hcx-access-token"));
   const [oauthWindow, setOAuthWindow] = useState<Window | null>(null);
-  type PageKey = 'overview' | 'chainstack' | 'send' | 'swap' | 'transactions' | 'assets' | 'rwa' | 'fundraising' | 'nft' | 'launchpad' | 'sports' | 'derivatives' | 'copytrading' | 'mining' | 'custody' | 'settings' | 'billing';
+  type PageKey = 'overview' | 'intelligence' | 'chainstack' | 'send' | 'swap' | 'transactions' | 'assets' | 'rwa' | 'fundraising' | 'nft' | 'launchpad' | 'sports' | 'derivatives' | 'copytrading' | 'mining' | 'custody' | 'settings' | 'billing';
   const [activePage, setActivePage] = useState<PageKey>('overview');
   const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({});
 
@@ -172,6 +175,17 @@ export default function App() {
       .then((payload) => { if (payload?.features) setFeatureFlags(payload.features); })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    fetch("/api/billing/subscription", { headers: { Authorization: `Bearer ${accessToken}` } })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        const plan = payload?.subscription?.plan;
+        if (plan === "research" || plan === "trader" || plan === "pro") setSelectedPlan(plan);
+      })
+      .catch(() => {});
+  }, [accessToken]);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -273,72 +287,14 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Load saved plan from localStorage
-    const saved = window.localStorage.getItem('hcx-plan-tier') as PlanTier | null;
-    if (saved === 'starter' || saved === 'pro' || saved === 'enterprise' || saved === 'enterprise_deluxe') {
-      setSelectedPlan(saved);
-    }
-
-    // Handle return from Stripe/PayPal checkout
+    // Checkout redirects are informational only. Subscription state must come
+    // from the server after webhook processing, never from URL parameters.
     const params = new URLSearchParams(window.location.search);
     const checkout = params.get('checkout');
-    const savedEmail = window.localStorage.getItem('hcx-checkout-email') || '';
-
-    if (checkout === 'stripe-success') {
-      const sessionId = params.get('session_id');
-      const plan = (params.get('plan') || 'starter') as PlanTier;
-      if (sessionId && savedEmail) {
-        fetch('/api/checkout/stripe/confirm', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId, email: savedEmail }),
-        })
-          .then((r) => r.json())
-          .then((d) => {
-            if (d.ok || d.plan) {
-              const confirmedPlan = (d.plan || plan) as PlanTier;
-              setSelectedPlan(confirmedPlan);
-              window.localStorage.setItem('hcx-plan-tier', confirmedPlan);
-              setCheckoutSuccess(`Successfully subscribed to the ${confirmedPlan.charAt(0).toUpperCase() + confirmedPlan.slice(1)} plan!`);
-            }
-          })
-          .catch(() => {});
-      }
-      // Even if confirm fails, grant access with the plan from URL
-      const fallbackPlan = (params.get('plan') || saved || 'starter') as PlanTier;
-      setSelectedPlan(fallbackPlan);
-      window.localStorage.setItem('hcx-plan-tier', fallbackPlan);
-      // Clean URL
+    if (checkout === 'stripe-success' || checkout === 'paypal-return') {
+      setCheckoutSuccess('Payment return received. Subscription access will update after server verification.');
       window.history.replaceState({}, '', '/');
-
-    } else if (checkout === 'paypal-return') {
-      const token = params.get('token'); // PayPal order ID
-      const plan = (params.get('plan') || 'starter') as PlanTier;
-      const email = decodeURIComponent(params.get('email') || savedEmail);
-      if (token && email) {
-        fetch('/api/checkout/paypal/capture', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ order_id: token, plan, email }),
-        })
-          .then((r) => r.json())
-          .then((d) => {
-            if (d.ok || d.plan) {
-              const confirmedPlan = (d.plan || plan) as PlanTier;
-              setSelectedPlan(confirmedPlan);
-              window.localStorage.setItem('hcx-plan-tier', confirmedPlan);
-              setCheckoutSuccess(`Successfully subscribed to the ${confirmedPlan.charAt(0).toUpperCase() + confirmedPlan.slice(1)} plan via PayPal!`);
-            }
-          })
-          .catch(() => {});
-      }
-      // Grant access optimistically
-      setSelectedPlan(plan);
-      window.localStorage.setItem('hcx-plan-tier', plan);
-      window.history.replaceState({}, '', '/');
-
     } else if (checkout === 'canceled') {
-      // User canceled at the payment provider — stay on paywall
       window.history.replaceState({}, '', '/');
     }
   }, []);
@@ -426,27 +382,31 @@ export default function App() {
   }, []);
 
   if (!isLoggedIn) {
-    return <LoginScreen onLogin={(email?: string) => {
+    return <LoginScreen onLogin={(email?: string, token?: string) => {
       setIsLoggedIn(true);
       if (email) {
         setUserEmail(email);
         window.localStorage.setItem('hcx-user-email', email);
+      }
+      if (token) {
+        setAccessToken(token);
+        window.localStorage.setItem("hcx-access-token", token);
       }
     }} data={data} />;
   }
 
   // Show checkout page when user picked a plan but hasn't paid yet
   if (checkoutPlan) {
-    const emailForCheckout = userEmail || window.localStorage.getItem('hcx-user-email') || '';
+    const emailForCheckout = userEmail;
     return (
       <CheckoutPage
         plan={checkoutPlan}
         email={emailForCheckout}
+        accessToken={accessToken ?? undefined}
         onBack={() => setCheckoutPlan(null)}
         onSuccess={(plan) => {
           setCheckoutPlan(null);
           setSelectedPlan(plan);
-          window.localStorage.setItem('hcx-plan-tier', plan);
           setCheckoutSuccess(`Successfully subscribed to the ${plan.charAt(0).toUpperCase() + plan.slice(1)} plan!`);
         }}
       />
@@ -454,10 +414,8 @@ export default function App() {
   }
 
   if (!selectedPlan) {
-    const emailForCheckout = userEmail || window.localStorage.getItem('hcx-user-email') || '';
+    const emailForCheckout = userEmail;
     return <PaywallScreen onSelectPlan={(plan) => {
-      // Store email before redirect to payment provider
-      if (emailForCheckout) window.localStorage.setItem('hcx-checkout-email', emailForCheckout);
       setCheckoutPlan(plan);
     }} />;
   }
@@ -477,6 +435,7 @@ export default function App() {
         <nav className="flex-1 p-4 overflow-y-auto">
           <SidebarSection label="Platform" />
           <NavItem icon={<LayoutDashboard size={18} />} label="Overview" active={activePage === 'overview'} onClick={() => setActivePage('overview')} />
+          <NavItem icon={<Sparkles size={18} />} label="Nexus Intelligence" active={activePage === 'intelligence'} onClick={() => setActivePage('intelligence')} />
           <NavItem icon={<Network size={18} />} label="Chainstack Connect" active={activePage === 'chainstack'} onClick={() => setActivePage('chainstack')} />
           <NavItem icon={<Send size={18} />} label="Send" active={activePage === 'send'} onClick={() => setActivePage('send')} />
           <NavItem icon={<ChevronRight size={18} />} label="Swap" active={activePage === 'swap'} onClick={() => setActivePage('swap')} />
@@ -574,6 +533,9 @@ export default function App() {
             <ChainstackConnectPage />
           </div>
         )}
+        {activePage === 'intelligence' && (
+          <div className="flex-1 overflow-y-auto p-8"><NexusIntelligencePage accessToken={accessToken ?? undefined} /></div>
+        )}
         {activePage === 'assets' && (
           <div className="flex-1 overflow-y-auto p-8"><DigitalAssetsPage /></div>
         )}
@@ -634,7 +596,6 @@ export default function App() {
               email={userEmail || window.localStorage.getItem('hcx-user-email') || ''}
               onUpgrade={() => {
                 setSelectedPlan(null);
-                window.localStorage.removeItem('hcx-plan-tier');
               }}
             />
           </div>
@@ -881,7 +842,7 @@ export default function App() {
   );
 }
 
-function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, data: any }) {
+function LoginScreen({ onLogin, data }: { onLogin: (email?: string, accessToken?: string) => void, data: any }) {
   const { connect, connectors, isPending: isConnecting } = useConnect();
   const [loginMethod, setLoginMethod] = useState<'form' | 'qr'>('form');
   const [authTab, setAuthTab] = useState<'email' | 'phone'>('email');
@@ -929,15 +890,13 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
     error?: string;
     message?: string;
     user?: Record<string, unknown>;
+    accessToken?: string;
   }> => {
     if (authMode === 'forgot') {
-      const response = await fetch('/api/auth/reset-password', {
+      const response = await fetch('/api/auth/v2/reset-password/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          emailOrPhone: authTab === 'email' ? emailOrSubAccount : phoneNumber,
-          newPassword: password,
-        }),
+        body: JSON.stringify({ email: emailOrSubAccount.trim() }),
       });
       const payloadJson = await response.json().catch(() => ({}));
       return {
@@ -946,6 +905,10 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
         error: payloadJson?.error,
         message: payloadJson?.message,
       };
+    }
+
+    if (authTab === "phone") {
+      return { ok: false, status: 400, error: "Canonical web authentication currently requires email." };
     }
 
     const payload = {
@@ -969,11 +932,11 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
       };
     }
 
-    const endpoint = authMode === 'signup' ? '/api/auth/signup' : '/api/auth/signin';
+    const endpoint = authMode === 'signup' ? '/api/auth/v2/register' : '/api/auth/v2/login';
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ email: emailOrSubAccount.trim(), password }),
     });
 
     const payloadJson = await response.json().catch(() => ({}));
@@ -983,6 +946,7 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
       error: payloadJson?.error,
       message: payloadJson?.message,
       user: payloadJson?.user,
+      accessToken: payloadJson?.accessToken,
     };
   };
 
@@ -999,13 +963,8 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
       if (!password.trim()) { setLoginError('Enter your password.'); return; }
     }
 
-    if ((authMode === 'signup' || authMode === 'forgot') && password.trim().length < 8) {
+    if (authMode === 'signup' && password.trim().length < 8) {
       setLoginError('Use at least 8 characters for your password.');
-      return;
-    }
-
-    if (authMode === 'forgot' && password !== confirmPassword) {
-      setLoginError('Passwords do not match.');
       return;
     }
 
@@ -1028,7 +987,7 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string) => void, dat
       }
 
       const loginEmail = authTab === 'email' ? emailOrSubAccount.trim() : undefined;
-      onLogin(loginEmail);
+      onLogin(loginEmail, (result as any).accessToken);
     } catch {
       setLoginError('Unable to reach authentication service.');
     } finally {

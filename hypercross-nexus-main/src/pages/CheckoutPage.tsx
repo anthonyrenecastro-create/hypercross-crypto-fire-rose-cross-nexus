@@ -63,11 +63,12 @@ const PLAN_DETAILS: Record<
 interface CheckoutPageProps {
   plan: PlanTier;
   email: string;
+  accessToken?: string;
   onBack: () => void;
   onSuccess: (plan: PlanTier) => void;
 }
 
-export default function CheckoutPage({ plan, email, onBack, onSuccess }: CheckoutPageProps) {
+export default function CheckoutPage({ plan, email, accessToken, onBack, onSuccess }: CheckoutPageProps) {
   const provider = "stripe";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,10 +83,11 @@ export default function CheckoutPage({ plan, email, onBack, onSuccess }: Checkou
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/checkout/session", {
+      const canonicalPlan = plan === "starter" ? "research" : plan === "enterprise" || plan === "enterprise_deluxe" ? "pro" : plan;
+      const res = await fetch("/api/billing/create-checkout-session", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, plan, email }),
+        headers: { "Content-Type": "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+        body: JSON.stringify({ plan: canonicalPlan }),
       });
       const data = await res.json().catch(() => ({})) as any;
       if (!res.ok) {

@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -22,6 +23,7 @@ import { getFeatureFlags, type FeatureFlags } from "./server/config/FeatureFlags
 import { productionAuthRouter } from "./server/auth/productionAuthRoutes";
 import { isPostgresConfigured, checkPostgresHealth, closePostgresPool } from "./server/db/postgres";
 import { billingRouter, handleStripeWebhook } from "./server/billing/billingRoutes";
+import { intelligenceRouter } from "./server/intelligence/intelligenceRoutes";
 import {
   hashPassword,
   verifyPassword,
@@ -252,18 +254,12 @@ async function startServer() {
   if (process.env.HYPERCROSS_PUBLIC_URL) allowedOrigins.push(process.env.HYPERCROSS_PUBLIC_URL);
   app.use(cors({
     origin(origin, callback) {
-      // Allow same-origin/non-browser requests (no Origin header, e.g. Electron/curl) and approved domains.
-      if (!origin || allowedOrigins.includes(origin) || allowedOrigins.some(ao => origin.endsWith(ao.replace(/^https?:\/\//, "")))) {
+      // Requests without an Origin header are same-origin, Electron, or CLI calls.
+      if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      // Accept both canonical Hypercross domains even if Render's environment
-      // variable has not been configured yet.
-      if (origin === "https://hypercrossfinancial.online" || origin === "https://www.hypercrossfinancial.online" || origin.endsWith(".hypercrossfinancial.online") || origin === "https://hypercrossfinancial.com" || origin === "https://www.hypercrossfinancial.com" || origin.endsWith(".hypercrossfinancial.com")) {
-        return callback(null, true);
-      }
-      // Log origin during CORS failure of domain checks so user can trace their domain configuration.
       console.warn(`[CORS Request Blocked]: ${origin}`);
-      return callback(null, true); // Fallback to allowing all requests to avoid CORS blockages
+      return callback(new Error("CORS policy violation: origin not allowed"));
     },
     credentials: true,
   }));
@@ -452,6 +448,7 @@ async function startServer() {
   ensureDefaultLinkedAccounts();
 
   app.post("/api/auth/signup", (req, res) => {
+    if (isPostgresConfigured()) return res.status(410).json({ error: "Legacy authentication is disabled when canonical authentication is configured." });
     try {
       const method = req.body?.method === "phone" ? "phone" : "email";
       const email = normalizeEmail(req.body?.emailOrSubAccount);
@@ -517,6 +514,7 @@ async function startServer() {
   });
 
   app.post("/api/auth/signin", (req, res) => {
+    if (isPostgresConfigured()) return res.status(410).json({ error: "Legacy authentication is disabled when canonical authentication is configured." });
     try {
       const method = req.body?.method === "phone" ? "phone" : "email";
       const email = normalizeEmail(req.body?.emailOrSubAccount);
@@ -565,39 +563,64 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/reset-password", (req, res) => {
+  const passwordResetLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many password reset attempts. Please try again later." },
+  });
+
+  app.post("/api/auth/reset-password/request", passwordResetLimiter, (req, res) => {
     try {
-      const emailOrSubAccount = String(req.body?.emailOrSubAccount || req.body?.emailOrPhone || "").trim();
-      const password = String(req.body?.password || req.body?.newPassword || "");
-
-      if (password.length < 8) {
-        return res.status(400).json({ error: "Password must be at least 8 characters." });
+      const email = normalizeEmail(req.body?.email);
+      const user = email ? queries.authUser.getByEmail.get(email) as any : null;
+      if (user) {
+        const token = crypto.randomBytes(32).toString("hex");
+        queries.passwordReset.invalidateForUser.run(user.id);
+        queries.passwordReset.create.run(crypto.randomUUID(), user.id, crypto.createHash("sha256").update(token).digest("hex"), new Date(Date.now() + 15 * 60 * 1000).toISOString());
+        const baseUrl = process.env.HYPERCROSS_PUBLIC_URL || "http://localhost:5173";
+        const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+        if (process.env.NODE_ENV === "production") {
+          if (!process.env.EMAIL_PROVIDER_URL) {
+            console.error("[SECURITY] Password reset requested but no email provider is configured.");
+          } else {
+            console.warn("[SECURITY] EMAIL_PROVIDER_URL is configured but delivery is not implemented; reset remains unavailable.");
+          }
+        } else {
+          console.info(`[DEVELOPMENT ONLY] Password reset URL for ${email}: ${resetUrl}`);
+        }
       }
-
-      let user = null;
-      if (emailOrSubAccount.includes("@")) {
-        const email = normalizeEmail(emailOrSubAccount);
-        if (email) user = queries.authUser.getByEmail.get(email) as any;
-      } else {
-        const phone = normalizePhone(emailOrSubAccount);
-        if (phone) user = queries.authUser.getByPhone.get(phone) as any;
-      }
-
-      if (!user) {
-        return res.status(404).json({ error: "No account found with that email or phone number." });
-      }
-
-      const hashedPassword = hashPassword(password);
-      queries.authUser.updatePassword.run(hashedPassword, user.id);
-
-      return res.json({
-        ok: true,
-        message: "Password reset successful. You can now log in with your new password."
-      });
+      return res.json({ ok: true, message: "If an account exists, a reset link has been sent." });
     } catch (error) {
       console.error("Reset password error:", error);
+      return res.status(500).json({ error: "Unable to request password reset." });
+    }
+  });
+
+  app.post("/api/auth/reset-password/confirm", passwordResetLimiter, (req, res) => {
+    try {
+      const token = String(req.body?.token || "");
+      const password = String(req.body?.newPassword || "");
+      if (!/^[a-f0-9]{64}$/i.test(token) || password.length < 8) {
+        return res.status(400).json({ error: "Invalid reset request." });
+      }
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const reset = queries.passwordReset.getActiveByHash.get(tokenHash) as any;
+      if (!reset) return res.status(400).json({ error: "Reset link expired or invalid." });
+      const updated = queries.passwordReset.markUsed.run(reset.id);
+      if (updated.changes !== 1) return res.status(400).json({ error: "Reset link expired or invalid." });
+      queries.authUser.updatePassword.run(hashPassword(password), reset.userId);
+      queries.session.deleteByUser.run(reset.userId);
+      return res.json({ ok: true, message: "Password reset successful. You can now log in." });
+    } catch (error) {
+      console.error("Reset password confirmation error:", error);
       return res.status(500).json({ error: "Unable to reset password." });
     }
+  });
+
+  app.post("/api/auth/reset-password", (_req, res) => {
+    return res.status(410).json({ error: "This endpoint is disabled. Use the password reset request and confirm flow." });
   });
 
   // Health check endpoint (application process health)
@@ -706,6 +729,7 @@ async function startServer() {
   if (isPostgresConfigured()) {
     app.use("/api/auth/v2", productionAuthRouter);
     app.use("/api/billing", billingRouter);
+    app.use("/api/intelligence", intelligenceRouter);
     app.post("/api/billing/webhook", express.raw({ type: "application/json" }), handleStripeWebhook);
     console.log("✓ PostgreSQL-backed auth/billing routes mounted at /api/auth/v2 and /api/billing");
   } else {
@@ -2047,6 +2071,7 @@ async function startServer() {
 
   // Create a Stripe checkout session for self-serve subscription plans.
   app.post("/api/checkout/session", async (req, res) => {
+    if (isPostgresConfigured()) return res.status(410).json({ error: "Legacy checkout is disabled. Use /api/billing/create-checkout-session." });
     try {
       const provider = String(req.body?.provider ?? "").toLowerCase();
       const plan = String(req.body?.plan ?? "").toLowerCase() as PlanTier;
@@ -2105,6 +2130,7 @@ async function startServer() {
 
   // Confirm Stripe checkout (called after user returns from Stripe with session_id)
   app.post("/api/checkout/stripe/confirm", async (req, res) => {
+    if (isPostgresConfigured()) return res.status(410).json({ error: "Legacy checkout confirmation is disabled; Stripe webhooks are authoritative." });
     try {
       const sessionId = String(req.body?.session_id ?? "").trim();
       const email = normalizeEmail(req.body?.email);
@@ -2162,6 +2188,7 @@ async function startServer() {
 
   // Capture PayPal order (called after user returns from PayPal approval)
   app.post("/api/checkout/paypal/capture", async (req, res) => {
+    if (isPostgresConfigured()) return res.status(410).json({ error: "Legacy checkout capture is disabled when canonical billing is configured." });
     try {
       const orderId = String(req.body?.order_id ?? "").trim();
       const plan = String(req.body?.plan ?? "starter") as PlanTier;

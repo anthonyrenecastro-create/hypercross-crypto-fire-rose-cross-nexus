@@ -10,9 +10,9 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, gt } from "drizzle-orm";
 import { getDb } from "../db/postgres";
-import { users, sessions } from "../../database/schema";
+import { users, sessions, passwordResetTokens } from "../../database/schema";
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // 15 minutes
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -44,6 +44,10 @@ function normalizeEmail(email: string): string {
 }
 
 function hashRefreshToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function hashResetToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
@@ -155,6 +159,28 @@ export async function revokeRefreshToken(refreshToken: string): Promise<void> {
 export async function revokeAllSessions(userId: string): Promise<void> {
   const db = getDb();
   await db.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+}
+
+export async function createPasswordResetToken(email: string): Promise<{ email: string; token: string } | null> {
+  const normalizedEmail = normalizeEmail(email);
+  const db = getDb();
+  const [user] = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
+  if (!user) return null;
+  const token = crypto.randomBytes(32).toString("hex");
+  await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(and(eq(passwordResetTokens.userId, user.id), isNull(passwordResetTokens.usedAt)));
+  await db.insert(passwordResetTokens).values({ userId: user.id, tokenHash: hashResetToken(token), expiresAt: new Date(Date.now() + 15 * 60 * 1000) });
+  return { email: user.email, token };
+}
+
+export async function resetPasswordWithToken(token: string, password: string): Promise<void> {
+  if (!/^[a-f0-9]{64}$/i.test(token) || password.length < 8) throw new Error("Reset link is invalid or expired.");
+  const db = getDb();
+  const [record] = await db.select().from(passwordResetTokens).where(and(eq(passwordResetTokens.tokenHash, hashResetToken(token)), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, new Date()))).limit(1);
+  if (!record) throw new Error("Reset link is invalid or expired.");
+  const updated = await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(and(eq(passwordResetTokens.id, record.id), isNull(passwordResetTokens.usedAt))).returning({ id: passwordResetTokens.id });
+  if (updated.length !== 1) throw new Error("Reset link is invalid or expired.");
+  await db.update(users).set({ passwordHash: await bcrypt.hash(password, BCRYPT_WORK_FACTOR), updatedAt: new Date() }).where(eq(users.id, record.userId));
+  await revokeAllSessions(record.userId);
 }
 
 export function verifyAccessToken(accessToken: string): { userId: string; email: string } {
