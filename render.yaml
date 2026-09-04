@@ -12,4 +12,8 @@ services:
       - key: HYPERCROSS_PUBLIC_URL
         value: https://www.hypercrossfinancial.online
       - key: ALLOWED_ORIGINS
-        value: https://www.hypercrossfinancial.online,https://hypercrossfinancial.online
+        value: https://www.hypercrossfinancial.online,https://hypercrossfinancial.online,https://www.hypercrossfinancial.com,https://hypercrossfinancial.com
+      - key: ZEROX_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
