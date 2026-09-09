@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
+import { toErrorMessage } from "../lib/errors";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -143,7 +144,7 @@ export function SendPage() {
     });
 
     if (!guardResult.ready) {
-      setError(guardResult.error);
+      setError(toErrorMessage(guardResult.error, "Unable to prepare transfer."));
       setSendState("REJECTED");
       return;
     }
@@ -160,7 +161,7 @@ export function SendPage() {
       });
       const prepared = await prepRes.json();
       if (!prepRes.ok) {
-        setError(prepared?.message || prepared?.error || "Failed to prepare transfer.");
+        setError(toErrorMessage(prepared?.message || prepared?.error, "Failed to prepare transfer."));
         setSendState("REJECTED");
         setPreparing(false);
         return;
@@ -200,7 +201,7 @@ export function SendPage() {
       } else if (msg.includes("Wrong network") || msg.includes("chain mismatch")) {
         setError("Switch wallet network to match backend Chain ID.");
       } else {
-        setError(err?.shortMessage || err?.message || "Transaction was not sent.");
+        setError(toErrorMessage(err?.shortMessage || err?.message || err, "Transaction was not sent."));
       }
     } finally {
       setPreparing(false);

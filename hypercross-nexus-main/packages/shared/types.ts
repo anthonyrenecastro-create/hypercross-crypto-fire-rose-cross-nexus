@@ -18,6 +18,74 @@ export interface User {
 
 export type PlanId = "research" | "trader" | "pro" | "none";
 
+export type ExecutionProfile = "STANDARD" | "ADVANCED" | "XERO";
+
+export type NexusPipelineStage =
+  | "THINK"
+  | "ANALYZE"
+  | "SCORE"
+  | "ROUTE"
+  | "PREPARE"
+  | "AUTHORIZE"
+  | "EXECUTE"
+  | "VERIFY";
+
+export interface RiskDecision {
+  allowed: boolean;
+  riskScore: number;
+  warnings: string[];
+  blockers: string[];
+  positionLimitUsd: number;
+  dailyLimitUsd: number;
+  requiredApproval: "USER" | "XERO";
+}
+
+export interface ExecutionEligibility {
+  standardEligible: boolean;
+  advancedEligible: boolean;
+  xeroEligible: boolean;
+  reasons: string[];
+  blockingConditions: string[];
+}
+
+export interface ExecutionRoute {
+  routeId: string;
+  provider: string;
+  chainId: number;
+  assetIn: string;
+  assetOut: string;
+  expectedAmountOut: string;
+  minimumAmountOut: string;
+  priceImpactBps: number;
+  estimatedGas: string | null;
+  quoteCreatedAt: string;
+  quoteExpiresAt: string;
+}
+
+export interface PreparedTransaction {
+  chainId: number;
+  network: string;
+  walletAddress: string;
+  to: string;
+  data: string;
+  value: string;
+  gasEstimate: string | null;
+  assetIn: string;
+  assetOut: string;
+  amountIn: string;
+  amountOutExpected: string;
+  amountOutMinimum: string;
+  notionalUsd: number | null;
+  quoteId: string;
+  quoteProvider: string;
+  quoteCreatedAt: string;
+  quoteExpiresAt: string;
+  slippageBps: number;
+  allowanceTarget: string | null;
+  routeId: string;
+  strategyProposalId: string;
+}
+
 export interface Subscription {
   id: string;
   userId: string;

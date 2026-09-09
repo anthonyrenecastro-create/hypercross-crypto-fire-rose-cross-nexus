@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
+import { toErrorMessage } from "../lib/errors";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -101,7 +102,7 @@ export function SwapPage() {
     });
 
     if (!guardResult.ready) {
-      setError(guardResult.error);
+      setError(toErrorMessage(guardResult.error, "Unable to fetch swap quote."));
       return;
     }
 
@@ -114,7 +115,7 @@ export function SwapPage() {
       });
       const payload = await res.json();
       if (!res.ok) {
-        setError(payload?.message || payload?.error || "Unable to fetch swap quote.");
+        setError(toErrorMessage(payload?.message || payload?.error, "Unable to fetch swap quote."));
         return;
       }
       setQuote(payload.quote);
@@ -158,7 +159,7 @@ export function SwapPage() {
       });
       const prepared = await res.json();
       if (!res.ok) {
-        setError(prepared?.message || prepared?.error || "Approval preparation failed.");
+        setError(toErrorMessage(prepared?.message || prepared?.error, "Approval preparation failed."));
         return;
       }
       const hash = await sendTransactionAsync({
@@ -177,7 +178,7 @@ export function SwapPage() {
       if (msg.includes("rejected") || msg.includes("User rejected")) {
         setError("User rejected signature request.");
       } else {
-        setError(err?.shortMessage || err?.message || "Approval was not sent.");
+        setError(toErrorMessage(err?.shortMessage || err?.message || err, "Approval was not sent."));
       }
     }
   };
@@ -206,7 +207,7 @@ export function SwapPage() {
     });
 
     if (!guardResult.ready) {
-      setError(guardResult.error);
+      setError(toErrorMessage(guardResult.error, "Swap unavailable."));
       return;
     }
 
@@ -218,7 +219,7 @@ export function SwapPage() {
       });
       const prepared = await res.json();
       if (!res.ok) {
-        setError(prepared?.message || prepared?.error || "Swap preparation failed.");
+        setError(toErrorMessage(prepared?.message || prepared?.error, "Swap preparation failed."));
         return;
       }
       // Explicit user confirmation happened via this button click — never auto-executed.
@@ -238,7 +239,7 @@ export function SwapPage() {
       if (msg.includes("rejected") || msg.includes("User rejected")) {
         setError("User rejected signature request.");
       } else {
-        setError(err?.shortMessage || err?.message || "Swap was not sent.");
+        setError(toErrorMessage(err?.shortMessage || err?.message || err, "Swap was not sent."));
       }
     }
   };

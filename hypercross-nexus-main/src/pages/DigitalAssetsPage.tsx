@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Coins, Plus, ArrowUpRight, Flame, RefreshCw, Shield, X, CheckCircle2, AlertTriangle } from "lucide-react";
+import { toErrorMessage } from "../lib/errors";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -329,7 +330,7 @@ export default function DigitalAssetsPage() {
               if (!res.ok) {
                 const payload = await res.json().catch(() => ({}));
                 console.error("Failed to persist asset metadata to backend:", payload?.error);
-                throw new Error(payload?.error || "Local backend indexing request failed");
+                throw new Error(toErrorMessage(payload?.error, "Local backend indexing request failed"));
               }
             }
             // Trigger local refresh
@@ -404,7 +405,7 @@ export default function DigitalAssetsPage() {
       if (res.ok && data.ok) {
         setActionResult({ ok: true, message: data.message || `Transferred ${actionAmount} ${asset.symbol} to ${transferTo}` });
       } else {
-        setActionResult({ ok: false, message: data.error || "Transfer failed." });
+        setActionResult({ ok: false, message: toErrorMessage(data.error, "Transfer failed.") });
       }
     } catch {
       setActionResult({ ok: false, message: "Network error. Could not reach server." });
@@ -439,7 +440,7 @@ export default function DigitalAssetsPage() {
         ));
         setActionResult({ ok: true, message: data.message || `Burned ${actionAmount} ${asset.symbol} from supply` });
       } else {
-        setActionResult({ ok: false, message: data.error || "Burn failed." });
+        setActionResult({ ok: false, message: toErrorMessage(data.error, "Burn failed.") });
       }
     } catch {
       setActionResult({ ok: false, message: "Network error. Could not reach server." });

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { CreditCard, ArrowLeft, Shield, CheckCircle2, Loader2, Mail } from "lucide-react";
+import { toErrorMessage } from "../lib/errors";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -91,7 +92,7 @@ export default function CheckoutPage({ plan, email, accessToken, onBack, onSucce
       });
       const data = await res.json().catch(() => ({})) as any;
       if (!res.ok) {
-        setError(data?.error || `Failed to create ${provider} checkout session.`);
+        setError(toErrorMessage(data?.error, `Failed to create ${provider} checkout session.`));
         return;
       }
       // Redirect to payment provider (Stripe hosted checkout or PayPal approval)
@@ -101,7 +102,7 @@ export default function CheckoutPage({ plan, email, accessToken, onBack, onSucce
         setError("No redirect URL returned from payment provider.");
       }
     } catch (err: any) {
-      setError(err?.message || "Network error. Please try again.");
+      setError(toErrorMessage(err, "Network error. Please try again."));
     } finally {
       setLoading(false);
     }

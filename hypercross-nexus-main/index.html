@@ -13,6 +13,11 @@
       window.addEventListener("error", function (event) {
         var status = document.getElementById("bootstrap-status");
         if (!status) return;
+        var errText = (event.error && event.error.message) || event.message || "";
+        // Ignore DOM conflicts caused by browser extensions (translators, password managers) mutating the page.
+        if (/removeChild|insertBefore|replaceChild/.test(errText) && /is not a child of this node/.test(errText)) {
+          return;
+        }
         var target = event.target;
         if (target instanceof HTMLScriptElement && target.src) {
           status.textContent = "The application could not load its JavaScript asset: " + target.src;

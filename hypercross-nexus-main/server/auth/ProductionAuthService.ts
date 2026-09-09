@@ -17,6 +17,7 @@ import { users, sessions, passwordResetTokens } from "../../database/schema";
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // 15 minutes
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const BCRYPT_WORK_FACTOR = 12;
+const DEV_JWT_SECRET = "hypercross-dev-jwt-secret-change-me";
 
 export interface PublicUser {
   id: string;
@@ -33,10 +34,20 @@ export interface AuthTokens {
   expiresIn: number;
 }
 
-function jwtSecret(): string {
+export function resolveJwtSecret(): string {
   const secret = process.env.JWT_SECRET?.trim();
-  if (!secret) throw new Error("JWT_SECRET is not configured.");
-  return secret;
+  if (secret) return secret;
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("JWT_SECRET is not configured.");
+  }
+
+  console.warn("JWT_SECRET is not configured. Falling back to a local development secret.");
+  return DEV_JWT_SECRET;
+}
+
+function jwtSecret(): string {
+  return resolveJwtSecret();
 }
 
 function normalizeEmail(email: string): string {

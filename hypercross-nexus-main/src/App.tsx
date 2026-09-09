@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
+import { toErrorMessage } from "./lib/errors";
 import CheckoutPage from "./pages/CheckoutPage";
 import BillingPage from "./pages/BillingPage";
 import DigitalAssetsPage from "./pages/DigitalAssetsPage";
@@ -204,7 +205,7 @@ export default function App() {
       const res = await fetch(`/api/payments/connections${planQuery}`);
       const payload = await res.json().catch(() => ({ connections: [] }));
       if (!res.ok) {
-        setPaymentsError(payload?.error ?? "Failed to load payment connections.");
+        setPaymentsError(toErrorMessage(payload?.error, "Failed to load payment connections."));
         return;
       }
       // Handle both array response (legacy) and object response (new with plan gating)
@@ -223,7 +224,7 @@ export default function App() {
       const data = await res.json().catch(() => ({}));
       
       if (!res.ok) {
-        throw new Error(data?.error || `Failed to initiate ${provider} OAuth`);
+        throw new Error(toErrorMessage(data?.error, `Failed to initiate ${provider} OAuth`));
       }
 
       if (data.authUrl) {
@@ -249,7 +250,7 @@ export default function App() {
         }, 1000);
       }
     } catch (err: any) {
-      setPaymentsError(err?.message || "Failed to start OAuth flow");
+      setPaymentsError(toErrorMessage(err, "Failed to start OAuth flow"));
     }
   };
 
@@ -261,7 +262,7 @@ export default function App() {
     });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(payload?.error ?? "Failed to link provider.");
+      throw new Error(toErrorMessage(payload?.error, "Failed to link provider."));
     }
     await loadPaymentConnections();
   };
@@ -274,7 +275,7 @@ export default function App() {
     });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(payload?.error ?? "Failed to disconnect provider.");
+      throw new Error(toErrorMessage(payload?.error, "Failed to disconnect provider."));
     }
     await loadPaymentConnections();
   };
@@ -928,8 +929,8 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string, accessToken?
       return {
         ok: response.ok,
         status: response.status,
-        error: payloadJson?.error,
-        message: payloadJson?.message,
+        error: toErrorMessage(payloadJson?.error, payloadJson?.message || "Password reset failed."),
+        message: toErrorMessage(payloadJson?.message || payloadJson?.error, "Password reset failed."),
       };
     }
 
@@ -969,8 +970,8 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string, accessToken?
     return {
       ok: response.ok,
       status: response.status,
-      error: payloadJson?.error,
-      message: payloadJson?.message,
+      error: toErrorMessage(payloadJson?.error, payloadJson?.message || "Authentication failed."),
+      message: toErrorMessage(payloadJson?.message || payloadJson?.error, "Authentication failed."),
       user: payloadJson?.user,
       accessToken: payloadJson?.accessToken,
     };
@@ -1002,7 +1003,7 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string, accessToken?
           setLoginError('Authentication endpoint is unavailable in this runtime.');
           return;
         }
-        setLoginError(result?.error || 'Authentication failed.');
+        setLoginError(toErrorMessage(result?.error, 'Authentication failed.'));
         return;
       }
 
@@ -1035,9 +1036,9 @@ function LoginScreen({ onLogin, data }: { onLogin: (email?: string, accessToken?
 
       {/* ── Left Branding Panel ── */}
       <div className="hidden lg:flex lg:w-1/2 flex-col justify-between p-12 relative z-10">
-        <div className="absolute inset-0 opacity-10 pointer-events-none z-0">
+        <div className="absolute inset-0 opacity-10 pointer-events-none z-0 h-full w-full">
           {data?.chartData && (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <LineChart data={data.chartData}>
                 <Line type="monotone" dataKey="stability" stroke="#c300ff" strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="chaos" stroke="#ff2600" strokeWidth={1} dot={false} />
@@ -1530,7 +1531,7 @@ function PaymentSettingsPage({
       setBusyProvider(provider);
       await onConnect(provider, accountRef, metadata);
     } catch (err: any) {
-      setActionError(err?.message ?? "Unable to connect provider.");
+      setActionError(toErrorMessage(err, "Unable to connect provider."));
     } finally {
       setBusyProvider(null);
     }
@@ -1542,7 +1543,7 @@ function PaymentSettingsPage({
       setBusyProvider(provider);
       await onDisconnect(provider);
     } catch (err: any) {
-      setActionError(err?.message ?? "Unable to disconnect provider.");
+      setActionError(toErrorMessage(err, "Unable to disconnect provider."));
     } finally {
       setBusyProvider(null);
     }
@@ -1556,7 +1557,7 @@ function PaymentSettingsPage({
         await onInitiateOAuth(provider);
       }
     } catch (err: any) {
-      setActionError(err?.message ?? "OAuth flow failed");
+      setActionError(toErrorMessage(err, "OAuth flow failed"));
     } finally {
       setBusyProvider(null);
     }
@@ -1570,7 +1571,7 @@ function PaymentSettingsPage({
         await onInitiateBankLink();
       }
     } catch (err: any) {
-      setActionError(err?.message ?? "Stripe bank-link authorization failed");
+      setActionError(toErrorMessage(err, "Stripe bank-link authorization failed"));
     } finally {
       setBusyProvider(null);
     }

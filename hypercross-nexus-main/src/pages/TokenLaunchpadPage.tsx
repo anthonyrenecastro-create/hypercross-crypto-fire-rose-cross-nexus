@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Rocket, Clock, Users, Lock, TrendingUp, CheckCircle2 } from "lucide-react";
+import { toErrorMessage } from "../lib/errors";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,7 +54,7 @@ export default function TokenLaunchpadPage() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data?.error ?? "Launch failed.");
+        throw new Error(toErrorMessage(data?.error, "Launch failed."));
       }
       setLaunchResult({
         contractAddress: "0x" + Math.random().toString(16).slice(2, 42).padEnd(40, '0'),
@@ -65,7 +66,7 @@ export default function TokenLaunchpadPage() {
       });
       setStep(3);
     } catch (err: any) {
-      setError(err?.message ?? "Failed to deploy launchpad assets.");
+      setError(toErrorMessage(err, "Failed to deploy launchpad assets."));
     } finally {
       setIsLaunching(false);
     }

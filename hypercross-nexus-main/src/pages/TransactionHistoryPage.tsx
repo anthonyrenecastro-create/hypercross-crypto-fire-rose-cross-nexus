@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toErrorMessage } from "../lib/errors";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +34,7 @@ export function TransactionHistoryPage() {
       .then((r) => r.json().then((payload) => ({ ok: r.ok, payload })))
       .then(({ ok, payload }) => {
         if (!ok) {
-          setError(payload?.message || payload?.error || "Failed to load transactions.");
+          setError(toErrorMessage(payload?.message || payload?.error, "Failed to load transactions."));
           return;
         }
         setTransactions(payload.transactions ?? []);

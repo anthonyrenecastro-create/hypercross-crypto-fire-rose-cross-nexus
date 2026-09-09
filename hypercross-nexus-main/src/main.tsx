@@ -7,8 +7,25 @@ import App from "./App.tsx";
 import "./index.css";
 
 const queryClient = new QueryClient();
+let reactAppMounted = false;
+
+// Browser extensions (translators, password managers, ad blockers) sometimes inject
+// nodes into the DOM tree React manages. When React later reconciles/unmounts that
+// subtree, the browser throws these errors even though the app itself is fine.
+function isBenignDomExtensionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /removeChild|insertBefore|replaceChild/.test(message) && /is not a child of this node/.test(message);
+}
 
 function showBootstrapError(error: unknown) {
+  if (isBenignDomExtensionError(error)) {
+    console.warn("Ignored benign DOM conflict (likely caused by a browser extension)", error);
+    return;
+  }
+  if (reactAppMounted) {
+    console.error("Application runtime failure", error);
+    return;
+  }
   const root = document.getElementById("root");
   if (!root) return;
   const message = error instanceof Error ? error.message : String(error);
@@ -65,7 +82,9 @@ if (!rootElement) {
   showBootstrapError("The application root element is missing.");
 } else {
   try {
-    createRoot(rootElement).render(
+    const reactRoot = createRoot(rootElement);
+    reactAppMounted = true;
+    reactRoot.render(
       <StrictMode>
         <AppErrorBoundary>
           <WagmiProvider config={wagmiConfig}>

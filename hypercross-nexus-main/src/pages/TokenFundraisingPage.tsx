@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { TrendingUp, Target, Users, DollarSign, Plus, Clock, CheckCircle2 } from "lucide-react";
+import { toErrorMessage } from "../lib/errors";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,7 +54,7 @@ export default function TokenFundraisingPage() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data?.error ?? "Campaign creation failed.");
+        throw new Error(toErrorMessage(data?.error, "Campaign creation failed."));
       }
       setCreationResult({
         ...form,
@@ -69,7 +70,7 @@ export default function TokenFundraisingPage() {
         fetchCampaigns();
       }, 2000);
     } catch (err: any) {
-      setError(err?.message ?? "Failed to create campaign.");
+      setError(toErrorMessage(err, "Failed to create campaign."));
     } finally {
       setIsCreating(false);
     }

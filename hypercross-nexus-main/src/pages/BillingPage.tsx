@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { CheckCircle2, XCircle, CreditCard, CircleDollarSign, RefreshCw, AlertTriangle, Calendar, Loader2 } from "lucide-react";
+import { toErrorMessage } from "../lib/errors";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -88,14 +89,14 @@ export default function BillingPage({ email, onUpgrade }: BillingPageProps) {
       });
       const data = await res.json().catch(() => ({})) as any;
       if (!res.ok) {
-        setCancelError(data?.error || "Failed to cancel subscription.");
+        setCancelError(toErrorMessage(data?.error, "Failed to cancel subscription."));
         return;
       }
       setCancelSuccess(true);
       setShowConfirm(false);
       await loadSubscription();
     } catch (err: any) {
-      setCancelError(err?.message || "Network error.");
+      setCancelError(toErrorMessage(err, "Network error."));
     } finally {
       setCanceling(false);
     }
