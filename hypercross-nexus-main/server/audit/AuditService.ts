@@ -37,6 +37,9 @@ export async function recordAuditEvent(input: {
     });
   } catch (error) {
     // Auditing must never crash the primary request path.
-    console.error("Failed to record audit event:", input.action, (error as Error)?.message);
+    // drizzle-orm wraps the real driver error in `.cause`; the top-level message is just the query text.
+    const cause = (error as { cause?: unknown })?.cause;
+    const reason = cause instanceof Error ? cause.message : (error as Error)?.message;
+    console.error("Failed to record audit event:", input.action, reason);
   }
 }
