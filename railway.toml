@@ -1,6 +1,7 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm ci && NODE_OPTIONS='--max-old-space-size=4096' npm run build"
+buildCommand = "cd hypercross-nexus-main && NODE_OPTIONS='--max-old-space-size=6144' npm ci && npm run build"
+rootDirectory = "hypercross-nexus-main"
 
 [deploy]
 startCommand = "npm run start"
@@ -15,3 +16,4 @@ restartPolicyMaxRetries = 5
 # STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_RESEARCH, STRIPE_PRICE_TRADER,
 # STRIPE_PRICE_PRO, ALLOWED_ORIGINS, HYPERCROSS_PUBLIC_URL.
 # See .env.example and docs/DEPLOYMENT.md for the full list.
+
